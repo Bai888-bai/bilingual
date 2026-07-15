@@ -71,17 +71,20 @@ async function runReader() {
   bottomBar.style.display = "flex";
   slider.max = numPages - 1;
 
+  // "stretch" 模式实测会无视 maxWidth，只要容器够宽就一直用双页跨页显示，
+  // 双页模式下每页只分到一半宽度，字被压小一倍。改成 "fixed" 模式 +
+  // 自己按当前可视区域算一个单页宽高，能强制稳定单页显示，字大小也可控。
+  const stageRect = document.getElementById("readerStage").getBoundingClientRect();
+  const pageW = Math.max(320, Math.min(720, stageRect.width - 24));
+  const pageH = Math.max(420, stageRect.height - 16);
+
   const pageFlip = new St.PageFlip(flipbookEl, {
-    width: 500,
-    height: 700,
-    size: "stretch",
-    minWidth: 280,
-    maxWidth: 1200,
-    minHeight: 400,
-    maxHeight: 1600,
+    width: pageW,
+    height: pageH,
+    size: "fixed",
     showCover: false,
     flippingTime: 500,
-    usePortrait: window.innerWidth < 760,
+    usePortrait: true,
   });
   pageFlip.loadFromHTML(document.querySelectorAll("#flipbook .leaf"));
 
