@@ -1,0 +1,141 @@
+:root {
+  --bg: #f4f6fb;
+  --surface: #ffffff;
+  --border: #e6e9f2;
+  --text: #1f2430;
+  --text-muted: #8a90a3;
+  --primary: #4f6bff;
+  --primary-dark: #3952d9;
+  --primary-tint: #eef1ff;
+  --success: #22c55e;
+  --success-tint: #e9fbf0;
+  --danger: #ef4444;
+  --danger-tint: #fdecec;
+  --warning: #f59e0b;
+  --warning-tint: #fff6e6;
+  --radius: 16px;
+  --radius-sm: 10px;
+  --shadow: 0 8px 28px rgba(31, 36, 48, 0.08);
+  --shadow-lg: 0 16px 40px rgba(31, 36, 48, 0.16);
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+html, body { height: 100%; overscroll-behavior-y: none; }
+
+body {
+  margin: 0;
+  font: 15px/1.6 -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+  color: var(--text);
+  background: var(--bg);
+}
+
+.app { display: flex; flex-direction: column; height: 100dvh; }
+
+.topBar {
+  padding: calc(14px + var(--safe-top)) 20px 14px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  display: flex; align-items: center; justify-content: space-between;
+  flex-shrink: 0;
+}
+.topBar h1 { font-size: 19px; margin: 0; }
+.topBarAction {
+  border: none; background: var(--primary); color: #fff; width: 34px; height: 34px; border-radius: 50%;
+  font-size: 18px; cursor: pointer; display: flex; align-items: center; justify-content: center;
+  transition: transform 0.15s ease, background 0.15s ease;
+}
+.topBarAction:hover { background: var(--primary-dark); transform: scale(1.06); }
+.topBarAction:active { transform: scale(0.94); }
+
+main#pages { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; }
+.page { display: none; padding: 18px 18px calc(18px + var(--safe-bottom)); }
+.page.active { display: block; animation: fadeIn 0.2s ease; }
+@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+
+.tabBar {
+  display: flex; background: var(--surface); border-top: 1px solid var(--border);
+  padding-bottom: var(--safe-bottom); flex-shrink: 0;
+}
+.tabBtn {
+  flex: 1; border: none; background: transparent; padding: 10px 4px 8px; cursor: pointer;
+  display: flex; flex-direction: column; align-items: center; gap: 3px;
+  color: var(--text-muted); font: inherit; font-size: 11px;
+}
+.tabBtn .tabIcon { font-size: 21px; }
+.tabBtn.active { color: var(--primary); }
+
+/* ---- 书架 ---- */
+.libraryEmpty { text-align: center; color: var(--text-muted); margin-top: 80px; }
+.libraryEmpty .icon { font-size: 46px; margin-bottom: 10px; }
+.libraryEmpty .hint { font-size: 12px; margin-top: 6px; }
+
+.importBtn {
+  display: block; width: 100%; max-width: 260px; margin: 18px auto 0; padding: 11px;
+  border: none; border-radius: 999px; background: var(--primary); color: #fff; font: inherit;
+  font-weight: 600; cursor: pointer; box-shadow: var(--shadow);
+}
+.importBtn:hover { background: var(--primary-dark); }
+
+.bookGrid {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 16px; margin-top: 6px;
+}
+.bookCard { cursor: pointer; position: relative; }
+.bookCover {
+  aspect-ratio: 3 / 4; border-radius: var(--radius-sm); background: var(--surface); box-shadow: var(--shadow);
+  display: flex; align-items: center; justify-content: center; font-size: 40px;
+  border: 1px solid var(--border); transition: transform 0.15s ease, box-shadow 0.15s ease;
+  overflow: hidden;
+}
+.bookCard:hover .bookCover { transform: translateY(-3px); box-shadow: var(--shadow-lg); }
+.bookCover.pdf { background: linear-gradient(160deg, #fff1f1, #ffffff); }
+.bookCover.epub { background: linear-gradient(160deg, #eef7ff, #ffffff); }
+.bookTitle { font-size: 12.5px; margin-top: 8px; text-align: center; line-height: 1.35; word-break: break-word; }
+.bookDeleteBtn {
+  position: absolute; top: 6px; right: 6px; width: 24px; height: 24px; border-radius: 50%;
+  border: none; background: rgba(20,22,30,0.55); color: #fff; font-size: 12px; cursor: pointer;
+  display: flex; align-items: center; justify-content: center; opacity: 0; transition: opacity 0.15s ease;
+}
+.bookCard:hover .bookDeleteBtn { opacity: 1; }
+
+/* ---- 生词本占位 / 我的 ---- */
+.comingSoon { text-align: center; color: var(--text-muted); margin-top: 80px; }
+.comingSoon .icon { font-size: 46px; margin-bottom: 10px; }
+
+.accountCard {
+  background: var(--surface); border-radius: var(--radius); box-shadow: var(--shadow); padding: 20px; max-width: 360px; margin: 20px auto 0;
+}
+.accountCard label { display: block; font-weight: 600; margin: 10px 0 4px; font-size: 13px; }
+.accountCard input[type=text], .accountCard input[type=password] {
+  width: 100%; box-sizing: border-box; padding: 10px 12px; border-radius: var(--radius-sm);
+  border: 1.5px solid var(--border); font: inherit; outline: none;
+}
+.accountCard input:focus { border-color: var(--primary); }
+.accountCard .primary {
+  width: 100%; margin-top: 14px; padding: 10px; border: none; border-radius: 999px; background: var(--primary);
+  color: #fff; font: inherit; font-weight: 600; cursor: pointer;
+}
+.accountCard .primary:hover { background: var(--primary-dark); }
+.accountCard .ghostBtn {
+  width: 100%; margin-top: 10px; padding: 10px; border: 1px solid var(--border); border-radius: 999px;
+  background: transparent; color: var(--text-muted); font: inherit; cursor: pointer;
+}
+.accountCard .errorText { color: var(--danger); font-size: 12px; margin-top: 8px; min-height: 16px; }
+.accountCard .statusText { text-align: center; font-size: 14px; }
+
+.toast {
+  position: fixed; left: 50%; bottom: calc(84px + var(--safe-bottom)); transform: translate(-50%, 20px);
+  background: #22252e; color: #fff; padding: 10px 18px; border-radius: 999px; font-size: 13px;
+  box-shadow: var(--shadow-lg); opacity: 0; pointer-events: none; transition: opacity 0.25s ease, transform 0.25s ease;
+  z-index: 10000; white-space: nowrap; max-width: 90vw; overflow: hidden; text-overflow: ellipsis;
+}
+.toast.show { opacity: 1; transform: translate(-50%, 0); }
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #14161c; --surface: #1d2029; --border: #2a2e3a; --text: #eef0f6; --text-muted: #9299ab;
+    --primary-tint: #232a4d; --success-tint: #16301f; --danger-tint: #3a1c1c; --warning-tint: #3a2e12;
+    --shadow: 0 8px 28px rgba(0,0,0,0.35); --shadow-lg: 0 16px 40px rgba(0,0,0,0.5);
+  }
+}

@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>中英阅读助手</title>
+<meta name="theme-color" content="#4f6bff" />
+<link rel="manifest" href="manifest.webmanifest" />
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="default" />
+<meta name="apple-mobile-web-app-title" content="中英阅读" />
+<link rel="stylesheet" href="app.css" />
+</head>
+<body>
+  <div class="app">
+    <header class="topBar">
+      <h1 id="pageTitle">书架</h1>
+      <button class="topBarAction" id="importBtnTop" title="导入书籍">＋</button>
+    </header>
+
+    <main id="pages">
+      <section id="pageLibrary" class="page active">
+        <input type="file" id="fileInput" accept=".pdf,.epub,application/pdf,application/epub+zip" style="display:none" />
+        <div id="libraryEmpty" class="libraryEmpty" style="display:none">
+          <div class="icon">📚</div>
+          <div>书架还是空的</div>
+          <div class="hint">导入一本 PDF 或 EPUB 开始阅读</div>
+          <button class="importBtn" id="importBtnEmpty">导入书籍</button>
+        </div>
+        <div id="bookGrid" class="bookGrid"></div>
+      </section>
+
+      <section id="pageVocab" class="page">
+        <div class="comingSoon">
+          <div class="icon">🗂️</div>
+          <div>生词本马上就来</div>
+        </div>
+      </section>
+
+      <section id="pageAccount" class="page">
+        <div class="accountCard">
+          <div class="statusText" id="accountStatus">检查登录状态中…</div>
+          <div id="loginForm" style="display:none">
+            <label>邮箱</label>
+            <input type="text" id="email" autocomplete="username" />
+            <label>密码</label>
+            <input type="password" id="password" autocomplete="current-password" />
+            <button class="primary" id="signInBtn">登录</button>
+            <div class="errorText" id="loginError"></div>
+          </div>
+          <button class="ghostBtn" id="signOutBtn" style="display:none">退出登录</button>
+        </div>
+      </section>
+    </main>
+
+    <nav class="tabBar">
+      <button class="tabBtn active" data-page="pageLibrary" data-title="书架">
+        <span class="tabIcon">📚</span><span>书架</span>
+      </button>
+      <button class="tabBtn" data-page="pageVocab" data-title="生词本">
+        <span class="tabIcon">🗂️</span><span>生词本</span>
+      </button>
+      <button class="tabBtn" data-page="pageAccount" data-title="我的">
+        <span class="tabIcon">👤</span><span>我的</span>
+      </button>
+    </nav>
+  </div>
+
+  <div class="toast" id="toast"></div>
+
+  <script src="supabase-web-client.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
