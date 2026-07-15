@@ -14,20 +14,21 @@ body {
 .readerApp { display: flex; flex-direction: column; height: 100dvh; }
 
 .readerTopBar {
-  display: flex; align-items: center; gap: 10px; padding: calc(10px + var(--safe-top)) 14px 10px;
+  display: flex; align-items: center; gap: 10px; padding: calc(8px + var(--safe-top)) 14px 8px;
   background: #1d2029; color: #fff; flex-shrink: 0; z-index: 20;
+  box-shadow: 0 2px 10px rgba(0,0,0,0.25);
 }
 .readerTopBar .backBtn {
-  border: none; background: rgba(255,255,255,0.1); color: #fff; width: 34px; height: 34px; border-radius: 50%;
-  font-size: 16px; cursor: pointer; flex-shrink: 0;
+  border: none; background: rgba(255,255,255,0.1); color: #fff; width: 30px; height: 30px; border-radius: 50%;
+  font-size: 15px; cursor: pointer; flex-shrink: 0; transition: background 0.15s ease;
 }
 .readerTopBar .backBtn:hover { background: rgba(255,255,255,0.18); }
-.readerTitle { flex: 1; font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.readerProgress { font-size: 12px; color: #9aa4b2; flex-shrink: 0; }
+.readerTitle { flex: 1; font-size: 13px; color: #c7cbd6; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.readerProgress { display: none; } /* 页码挪到底部实时显示，顶部不再重复 */
 
 .readerStage {
-  flex: 1; position: relative; display: flex; align-items: center; justify-content: center;
-  overflow: hidden; padding: 10px;
+  flex: 1; min-height: 0; position: relative; display: flex; align-items: center; justify-content: center;
+  overflow: hidden; padding: 8px 10px;
 }
 .readerLoading { color: #9aa4b2; text-align: center; }
 .readerLoading .spinner {
@@ -36,12 +37,17 @@ body {
 }
 @keyframes spin { to { transform: rotate(360deg); } }
 
-#flipbook { background: transparent; }
+/* page-flip 的 "stretch" 尺寸模式有时候是按 window 大小算的，不一定认
+   得自己实际能用的父容器空间（被上下两条 bar 占掉的那部分），这里用
+   max-width/max-height 强行兜底，不管它内部算出多大，都不能超出
+   .readerStage 实际分配到的可视区域，避免内容被两条 bar 挡住。 */
+#flipbook { background: transparent; max-width: 100%; max-height: 100%; }
 .leaf {
-  width: 100%; height: 100%; background: #fdfdfb; overflow: hidden; position: relative;
-  color: #1f2430;
+  width: 100%; height: 100%; background: #fdfdfb; overflow-y: auto; overflow-x: hidden; position: relative;
+  color: #1f2430; box-shadow: 0 4px 24px rgba(0,0,0,0.3);
+  scrollbar-width: thin;
 }
-.leaf .leafInner { position: relative; width: 100%; height: 100%; overflow: hidden; }
+.leaf .leafInner { position: relative; }
 
 /* PDF 文本层：透明文字覆盖在 canvas 图像上，负责点击/选中交互 */
 .pdfCanvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; }
@@ -52,8 +58,17 @@ body {
 }
 .textLayer .btr-w.translated { color: #2f6bff !important; background: #fff; }
 
-/* EPUB 章节：真实可流动的 HTML 文本 */
-.epubPage { padding: 26px 24px; overflow-y: auto; height: 100%; font-size: 17px; line-height: 1.85; }
+/* EPUB 章节：真实可流动的 HTML 文本。max-width 控制每行字数，太宽的
+   文本行很难读——这是排版的基本常识，不然一行几十个词眼睛很难跟着走。 */
+.epubPage {
+  padding: 30px 8px; overflow-y: auto; height: 100%; box-sizing: border-box;
+  font-size: 18px; line-height: 1.9; font-family: Georgia, "Songti SC", "PingFang SC", serif;
+}
+/* 用固定 px 而不是 em：em 是按每个元素自己的字号算的，标题字号本来就比正文
+   大，用 em 会导致标题那一行的可读宽度比正文宽好多，两者对不齐 */
+.epubPage > * { max-width: 640px; margin-left: auto; margin-right: auto; }
+.epubPage h1, .epubPage h2, .epubPage h3 { line-height: 1.4; margin: 0.6em auto; }
+.epubPage p { margin: 0 auto 1.1em; }
 .epubPage .btr-w { cursor: pointer; }
 .epubPage .btr-w.translated { color: #2f6bff; font-weight: 600; border-bottom: 1px dotted rgba(47,107,255,0.5); }
 
@@ -68,16 +83,20 @@ body {
 .readerNav:hover { opacity: 1 !important; }
 
 .readerBottomBar {
-  display: flex; align-items: center; justify-content: center; gap: 18px;
+  display: flex; flex-direction: column; align-items: center; gap: 6px;
   padding: 8px 14px calc(10px + var(--safe-bottom)); background: #1d2029; flex-shrink: 0;
+  box-shadow: 0 -2px 10px rgba(0,0,0,0.25);
 }
+.readerBottomRow { display: flex; align-items: center; justify-content: center; gap: 14px; width: 100%; }
 .readerBottomBar button {
-  border: none; background: rgba(255,255,255,0.1); color: #fff; width: 38px; height: 38px; border-radius: 50%;
-  font-size: 16px; cursor: pointer;
+  border: none; background: rgba(255,255,255,0.1); color: #fff; width: 36px; height: 36px; border-radius: 50%;
+  font-size: 15px; cursor: pointer; flex-shrink: 0; transition: background 0.15s ease, transform 0.1s ease;
 }
 .readerBottomBar button:hover { background: rgba(255,255,255,0.18); }
+.readerBottomBar button:active { transform: scale(0.92); }
 .readerBottomBar button:disabled { opacity: 0.35; cursor: default; }
-.readerBottomBar input[type=range] { flex: 1; max-width: 320px; accent-color: var(--primary); }
+.readerBottomBar input[type=range] { flex: 1; max-width: 420px; accent-color: var(--primary); }
+.readerPageNum { font-size: 12px; color: #9aa4b2; letter-spacing: 0.3px; min-width: 60px; text-align: center; }
 
 /* 词语浮窗（跟浏览器扩展 ui.js 的设计一致） */
 .wordPopup {

@@ -15,7 +15,7 @@ async function runReader() {
   const bookId = Number(params.get("id"));
 
   const titleEl = document.getElementById("readerTitle");
-  const progressEl = document.getElementById("readerProgress");
+  const pageNumEl = document.getElementById("readerPageNum");
   const loadingEl = document.getElementById("readerLoading");
   const loadingTextEl = document.getElementById("readerLoadingText");
   const flipbookEl = document.getElementById("flipbook");
@@ -106,10 +106,14 @@ async function runReader() {
     }, 400);
   }
 
+  function updatePageNum(idx) {
+    pageNumEl.textContent = `${idx + 1} / ${numPages}`;
+    slider.value = idx;
+  }
+
   function onFlip() {
     const idx = pageFlip.getCurrentPageIndex();
-    progressEl.textContent = `${idx + 1} / ${numPages}`;
-    slider.value = idx;
+    updatePageNum(idx);
     renderAround(idx);
     saveProgress(idx);
   }
@@ -120,9 +124,23 @@ async function runReader() {
   if (startIndex > 0) pageFlip.turnToPage(startIndex);
   onFlip();
 
-  document.getElementById("btnPrev").addEventListener("click", () => pageFlip.flipPrev());
-  document.getElementById("btnNext").addEventListener("click", () => pageFlip.flipNext());
-  document.getElementById("navPrev").addEventListener("click", () => pageFlip.flipPrev());
-  document.getElementById("navNext").addEventListener("click", () => pageFlip.flipNext());
-  slider.addEventListener("input", () => pageFlip.turnToPage(Number(slider.value)));
+  // 页码不等翻页动画播完才更新——点了按钮/拖了滑块就立刻显示目标页码，
+  // 动画到底之后 onFlip 里的真实页码再校准一次（万一到边界不让翻了）
+  function goPrev() {
+    updatePageNum(Math.max(0, pageFlip.getCurrentPageIndex() - 1));
+    pageFlip.flipPrev();
+  }
+  function goNext() {
+    updatePageNum(Math.min(numPages - 1, pageFlip.getCurrentPageIndex() + 1));
+    pageFlip.flipNext();
+  }
+  document.getElementById("btnPrev").addEventListener("click", goPrev);
+  document.getElementById("btnNext").addEventListener("click", goNext);
+  document.getElementById("navPrev").addEventListener("click", goPrev);
+  document.getElementById("navNext").addEventListener("click", goNext);
+  slider.addEventListener("input", () => {
+    const idx = Number(slider.value);
+    pageNumEl.textContent = `${idx + 1} / ${numPages}`;
+    pageFlip.turnToPage(idx);
+  });
 }

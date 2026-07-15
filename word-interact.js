@@ -48,6 +48,9 @@
       downX = e.clientX;
       downY = e.clientY;
       if (span) {
+        // 阻止事件继续往下传：阅读器的翻页库自己也监听了 mousedown 来做
+        // "按住拖拽翻页"，不拦住的话点单词会被它误判成翻页手势。
+        e.stopPropagation();
         pendingSpan = span;
         longPressTimer = setTimeout(() => {
           longPressFired = true;

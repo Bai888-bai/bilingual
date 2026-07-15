@@ -60,17 +60,18 @@ const PdfReader = (() => {
         if (leaf.dataset.rendered) return;
         leaf.dataset.rendered = "1";
         const page = await pdf.getPage(pageNum);
+        // 按宽度铺满来定缩放比例，不再用 min(宽度比例, 高度比例) 强行把整页
+        // 塞进可视区域——那样字会被压得很小。改成按宽度适配，页面比可视区域
+        // 高的话，这一页内部自己滚动（.leaf 上开了 overflow-y:auto）。
         const cw = leaf.clientWidth || 500;
-        const ch = leaf.clientHeight || 700;
         const base = page.getViewport({ scale: 1 });
-        const scale = Math.min(cw / base.width, ch / base.height);
+        const scale = cw / base.width;
         const viewport = page.getViewport({ scale });
 
         const inner = document.createElement("div");
         inner.className = "leafInner";
         inner.style.width = viewport.width + "px";
         inner.style.height = viewport.height + "px";
-        inner.style.margin = "auto";
 
         const canvas = document.createElement("canvas");
         canvas.className = "pdfCanvas";
