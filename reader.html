@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>阅读 - 中英阅读助手</title>
+<meta name="theme-color" content="#1d2029" />
+<link rel="stylesheet" href="reader.css" />
+</head>
+<body>
+  <div class="readerApp">
+    <div class="readerTopBar">
+      <button class="backBtn" id="backBtn" title="返回书架">←</button>
+      <div class="readerTitle" id="readerTitle">加载中…</div>
+      <div class="readerProgress" id="readerProgress"></div>
+    </div>
+
+    <div class="readerStage" id="readerStage">
+      <div class="readerLoading" id="readerLoading">
+        <div class="spinner"></div>
+        <div id="readerLoadingText">正在打开书籍…</div>
+      </div>
+      <div id="flipbook" style="display:none"></div>
+      <div class="readerNav prev" id="navPrev">‹</div>
+      <div class="readerNav next" id="navNext">›</div>
+    </div>
+
+    <div class="readerBottomBar" id="readerBottomBar" style="display:none">
+      <button id="btnPrev" title="上一页">‹</button>
+      <input type="range" id="pageSlider" min="0" max="0" value="0" />
+      <button id="btnNext" title="下一页">›</button>
+    </div>
+  </div>
+
+  <div class="toast" id="toast"></div>
+
+  <script src="https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/epubjs@0.3.93/dist/epub.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/page-flip@2.0.7/dist/js/page-flip.browser.js"></script>
+  <script src="supabase-web-client.js"></script>
+  <script src="book-store.js"></script>
+  <script src="word-popup.js"></script>
+  <script src="word-interact.js"></script>
+  <script src="pdf-reader.js"></script>
+  <script src="epub-reader.js"></script>
+  <script src="reader.js"></script>
+</body>
+</html>

@@ -143,3 +143,35 @@ async function sbUpdateWord(entry) {
   const body = { due: new Date(entry.due).toISOString(), interval_ms: entry.interval, ease: entry.ease };
   await sbRest(`/words?id=eq.${entry.id}`, { method: "PATCH", body: JSON.stringify(body), prefer: "return=minimal" });
 }
+
+// ---------------- 查词（走 Edge Function 代理，不能直接调有道，见 supabase/functions/lookup） ----------------
+const LOOKUP_FN_URL = `${SUPABASE_URL}/functions/v1/smart-task`;
+const LOOKUP_CACHE_PREFIX = "lookupCache:";
+
+function getCachedLookup(key) {
+  const raw = localStorage.getItem(LOOKUP_CACHE_PREFIX + key);
+  return raw ? JSON.parse(raw) : null;
+}
+function setCachedLookup(key, data) {
+  localStorage.setItem(LOOKUP_CACHE_PREFIX + key, JSON.stringify(data));
+}
+
+async function lookupText(text) {
+  const cacheKey = text.trim().toLowerCase();
+  const cached = getCachedLookup(cacheKey);
+  if (cached) return cached;
+
+  const resp = await fetch(LOOKUP_FN_URL, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+      apikey: SUPABASE_ANON_KEY,
+    },
+    body: JSON.stringify({ text }),
+  });
+  const json = await resp.json();
+  if (!json.ok) throw new Error(json.error || "LOOKUP_FAILED");
+  setCachedLookup(cacheKey, json.data);
+  return json.data;
+}

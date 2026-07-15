@@ -41,6 +41,7 @@ while ($listener.IsListening) {
       $contentType = $mimeMap[$ext]
       if (-not $contentType) { $contentType = "application/octet-stream" }
       $response.ContentType = $contentType
+      $response.Headers.Add("Cache-Control", "no-store")
       $response.ContentLength64 = $bytes.Length
       $response.OutputStream.Write($bytes, 0, $bytes.Length)
     } else {
