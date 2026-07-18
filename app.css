@@ -13,6 +13,8 @@
   --danger-tint: #fbe6e4;
   --warning: #a5701f;
   --warning-tint: #fbf0dc;
+  --adv: #7a4fa3;
+  --adv-tint: #ece2f5;
   --radius: 16px;
   --radius-sm: 10px;
   --shadow: 0 8px 28px rgba(43, 32, 21, 0.12);
@@ -211,10 +213,209 @@ main#pages { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; }
 }
 .toast.show { opacity: 1; transform: translate(-50%, 0); }
 
+/* ---- 生词本：移植自浏览器扩展 review.css，配色改用页面已有的暖色调
+   变量，跟书架/我的页面统一。类名基本照搬，注意避开跟本文件已有的
+   .page/.emptyState 之类同名类冲突（生词本这边没有复用那些名字）。 ---- */
+.vocabHeader { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 16px; }
+.select-wrap { position: relative; }
+.select-wrap::after {
+  content: "▾"; position: absolute; right: 12px; top: 50%; transform: translateY(-50%);
+  pointer-events: none; color: var(--text-muted); font-size: 12px;
+}
+#pageVocab select {
+  appearance: none; -webkit-appearance: none; font: inherit; padding: 8px 30px 8px 14px; border-radius: 999px;
+  border: 1px solid var(--border); background: var(--surface); cursor: pointer; color: var(--text);
+  box-shadow: var(--shadow); min-width: 140px;
+}
+#pageVocab select:hover { border-color: var(--primary); }
+#pageVocab select#quizDirection { min-width: unset; padding: 6px 26px 6px 12px; font-size: 13px; }
+
+.iconBtn {
+  width: 34px; height: 34px; border-radius: 50%; border: none; background: var(--primary);
+  color: #fff; font-size: 18px; line-height: 1; cursor: pointer; box-shadow: var(--shadow);
+  display: flex; align-items: center; justify-content: center;
+  transition: transform 0.15s ease, background 0.15s ease;
+}
+.iconBtn:hover { background: var(--primary-dark); transform: scale(1.06); }
+.iconBtn:active { transform: scale(0.94); }
+.iconBtn.ghost { background: var(--surface); color: var(--text-muted); border: 1px solid var(--border); font-size: 16px; }
+.iconBtn.ghost:hover { background: var(--primary-tint); color: var(--primary); }
+
+.tabs {
+  display: flex; gap: 4px; background: var(--surface); border-radius: 999px; padding: 4px;
+  box-shadow: var(--shadow); width: fit-content; margin-bottom: 18px;
+}
+.tab {
+  border: none; background: transparent; font: inherit; font-weight: 600; color: var(--text-muted);
+  padding: 8px 18px; border-radius: 999px; cursor: pointer; transition: color 0.2s ease, background 0.2s ease;
+}
+.tab:hover { color: var(--text); }
+.tab.active { background: var(--primary); color: #fff; }
+
+.panel { display: none; animation: fadeIn 0.25s ease; }
+.panel.active { display: block; }
+
+.wordList { display: flex; flex-direction: column; gap: 8px; }
+.wordRow {
+  display: flex; align-items: center; gap: 14px; background: var(--surface); border-radius: var(--radius-sm);
+  padding: 12px 14px; box-shadow: var(--shadow); transition: opacity 0.25s ease, transform 0.25s ease, box-shadow 0.15s ease;
+}
+.wordRow:hover { box-shadow: var(--shadow-lg); }
+.wordMain { flex: 1; min-width: 0; }
+.wordHead { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.wordText { font-weight: 700; font-size: 16px; }
+.wordPhon { color: var(--text-muted); font-size: 12px; }
+.wordTrans { color: var(--text-muted); font-size: 13px; margin-top: 4px; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.wordDate { color: var(--text-muted); font-size: 12px; white-space: nowrap; }
+.dueBadge { font-size: 11px; padding: 2px 8px; border-radius: 999px; white-space: nowrap; }
+.dueBadge.due { background: var(--warning-tint); color: var(--warning); }
+.dueBadge.ok { background: var(--success-tint); color: var(--success); }
+
+.speakBtn {
+  border: none; background: transparent; color: var(--text-muted); cursor: pointer; font-size: 14px;
+  width: 26px; height: 26px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center;
+  flex-shrink: 0; transition: background 0.15s ease, color 0.15s ease;
+}
+.speakBtn:hover { background: var(--primary-tint); color: var(--primary); }
+.cardSpeakBtn { position: absolute; top: 12px; right: 12px; font-size: 16px; }
+
+.explainChip { display: inline-flex; align-items: baseline; gap: 4px; }
+.explainItem { margin: 5px 0; }
+.explainRow { display: flex; align-items: baseline; gap: 6px; }
+.exampleText { color: var(--text-muted); font-size: 12px; font-style: italic; margin: 2px 0 0 4px; }
+.posBadge { flex-shrink: 0; font-size: 11px; font-weight: 700; padding: 1px 7px; border-radius: 5px; }
+.posBadge.pos-n { background: var(--primary-tint); color: var(--primary-dark); }
+.posBadge.pos-v { background: var(--success-tint); color: #16803d; }
+.posBadge.pos-adj { background: var(--warning-tint); color: #8a5605; }
+.posBadge.pos-adv { background: var(--adv-tint); color: var(--adv); }
+.posBadge.pos-other { background: var(--border); color: var(--text-muted); }
+.trashBtn {
+  border: none; background: transparent; color: var(--text-muted); cursor: pointer; font-size: 16px;
+  width: 30px; height: 30px; border-radius: 50%; display: flex; align-items: center; justify-content: center;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+.trashBtn:hover { background: var(--danger-tint); color: var(--danger); }
+
+.emptyState { text-align: center; color: var(--text-muted); margin: 60px 0; }
+.emptyIcon { font-size: 40px; margin-bottom: 8px; }
+.emptyHint { font-size: 12px; margin-top: 4px; }
+
+.reviewToolbar { display: flex; justify-content: center; gap: 16px; margin-bottom: 14px; flex-wrap: wrap; align-items: center; }
+.switch { display: flex; align-items: center; gap: 6px; color: var(--text-muted); font-size: 13px; cursor: pointer; user-select: none; }
+.switch input { accent-color: var(--primary); width: 15px; height: 15px; }
+
+.progressBar { height: 6px; border-radius: 999px; background: var(--border); overflow: hidden; max-width: 320px; margin: 0 auto; }
+.progressFill { height: 100%; background: linear-gradient(90deg, var(--primary), var(--primary-dark)); width: 0%; transition: width 0.3s ease; }
+.progressText { text-align: center; color: var(--text-muted); font-size: 12px; margin: 6px 0 4px; }
+
+/* 卡片复习：cardDrag 负责左右拖拽位移/旋转（2D），card 负责翻面
+   （3D rotateY）。两层变换分开，避免 translateX 和 rotateY 互相覆盖。 */
+.cardStage { display: flex; justify-content: center; margin: 26px 0; perspective: 1200px; }
+.cardDrag {
+  width: 320px; max-width: 90vw; height: 210px; position: relative; cursor: grab; user-select: none;
+  touch-action: none; transition: transform 0.35s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.cardDrag.dragging { transition: none; cursor: grabbing; }
+.cardDrag.flyLeft { transform: translateX(-560px) rotate(-24deg) !important; transition: transform 0.35s ease-in; }
+.cardDrag.flyRight { transform: translateX(560px) rotate(24deg) !important; transition: transform 0.35s ease-in; }
+
+.card {
+  position: absolute; inset: 0; transform-style: preserve-3d; transition: transform 0.45s cubic-bezier(0.2, 0.8, 0.2, 1);
+  cursor: pointer;
+}
+.card.flipped { transform: rotateY(180deg); }
+.cardFace {
+  position: absolute; inset: 0; border-radius: 18px; background: var(--surface);
+  box-shadow: var(--shadow-lg); display: flex; flex-direction: column; align-items: center; justify-content: center;
+  backface-visibility: hidden; padding: 20px; text-align: center; border: 1px solid var(--border);
+}
+.cardBack {
+  transform: rotateY(180deg); background: var(--primary-tint);
+  align-items: stretch; justify-content: flex-start; text-align: left; overflow-y: auto;
+}
+.cardWord { font: 700 30px var(--serif); }
+.cardPhon { color: var(--text-muted); font-size: 13px; margin-top: 6px; }
+.flipHint { position: absolute; bottom: 14px; font-size: 11px; color: var(--text-muted); opacity: 0.7; }
+.cardTranslation { font-size: 17px; font-weight: 700; color: var(--primary-dark); text-align: center; margin-bottom: 8px; }
+.cardExplains { display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: var(--text); }
+
+.swipeHint {
+  position: absolute; top: 16px; font-weight: 800; font-size: 15px; padding: 4px 12px; border-radius: 8px;
+  opacity: 0; transition: opacity 0.15s ease, transform 0.15s ease; pointer-events: none;
+  border: 2px solid; z-index: 2;
+}
+.swipeHint.left { left: 16px; color: var(--danger); border-color: var(--danger); }
+.swipeHint.right { right: 16px; color: var(--success); border-color: var(--success); }
+
+.cardActions { display: flex; justify-content: center; gap: 18px; margin-top: 18px; }
+.roundBtn {
+  width: 54px; height: 54px; border-radius: 50%; border: 2px solid; background: var(--surface);
+  font-size: 18px; font-weight: 700; cursor: pointer; box-shadow: var(--shadow);
+  transition: transform 0.12s ease, background 0.12s ease, color 0.12s ease;
+}
+.roundBtn:hover { transform: translateY(-3px) scale(1.05); }
+.roundBtn:active { transform: scale(0.95); }
+.roundBtn.dontknow { border-color: var(--danger); color: var(--danger); }
+.roundBtn.dontknow:hover { background: var(--danger-tint); }
+.roundBtn.vague { border-color: var(--warning); color: var(--warning); width: 46px; height: 46px; align-self: center; }
+.roundBtn.vague:hover { background: var(--warning-tint); }
+.roundBtn.know { border-color: var(--success); color: var(--success); }
+.roundBtn.know:hover { background: var(--success-tint); }
+
+.quizBox { max-width: 380px; margin: 30px auto 0; text-align: center; }
+.quizPrompt { font: 800 26px var(--serif); margin-bottom: 4px; }
+.quizHint { color: var(--text-muted); margin-bottom: 18px; font-size: 13px; }
+.quizBox input[type=text] {
+  width: 100%; box-sizing: border-box; padding: 12px 14px; font-size: 16px; border-radius: var(--radius-sm);
+  border: 2px solid var(--border); background: var(--surface); outline: none; transition: border-color 0.15s ease;
+}
+.quizBox input[type=text]:focus { border-color: var(--primary); }
+.quizBox input.correct { border-color: var(--success); background: var(--success-tint); }
+.quizBox input.wrong { border-color: var(--danger); background: var(--danger-tint); animation: shake 0.35s ease; }
+@keyframes shake {
+  10%, 90% { transform: translateX(-1px); }
+  20%, 80% { transform: translateX(2px); }
+  30%, 50%, 70% { transform: translateX(-5px); }
+  40%, 60% { transform: translateX(5px); }
+}
+.quizFeedback { margin-top: 12px; min-height: 22px; font-weight: 700; font-size: 14px; }
+.quizFeedback.correct { color: var(--success); }
+.quizFeedback.wrong { color: var(--danger); }
+.quizActions { margin-top: 14px; }
+
+button.primary {
+  font: inherit; background: var(--primary); color: #fff; border: none; padding: 9px 22px;
+  border-radius: 999px; cursor: pointer; font-weight: 600; box-shadow: var(--shadow); transition: background 0.15s ease, transform 0.1s ease;
+}
+button.primary:hover { background: var(--primary-dark); }
+button.primary:active { transform: scale(0.97); }
+
+.modalOverlay {
+  position: fixed; inset: 0; background: rgba(20, 22, 30, 0.35); display: flex; align-items: center; justify-content: center;
+  opacity: 0; pointer-events: none; transition: opacity 0.2s ease; z-index: 9999;
+}
+.modalOverlay.show { opacity: 1; pointer-events: auto; }
+.modal {
+  background: var(--surface); border-radius: var(--radius); padding: 22px; width: 300px; box-shadow: var(--shadow-lg);
+  transform: scale(0.92); transition: transform 0.2s ease;
+}
+.modalOverlay.show .modal { transform: scale(1); }
+.modal h3 { margin: 0 0 12px; font: 700 16px var(--serif); }
+.modal input[type=text] {
+  width: 100%; box-sizing: border-box; padding: 9px 12px; border-radius: var(--radius-sm); border: 1.5px solid var(--border);
+  font: inherit; outline: none;
+}
+.modal input[type=text]:focus { border-color: var(--primary); }
+.modalActions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
+.modalActions button:not(.primary) {
+  font: inherit; background: var(--bg); border: none; padding: 9px 18px; border-radius: 999px; cursor: pointer; color: var(--text-muted);
+}
+
 @media (prefers-color-scheme: dark) {
   :root {
     --bg: #1c1712; --surface: #241d16; --border: #3a2f22; --text: #ede1c8; --text-muted: #a3937a;
     --primary-tint: #3a2320; --success-tint: #16301f; --danger-tint: #3a1c1c; --warning-tint: #3a2e12;
+    --adv-tint: #2c2038;
     --shadow: 0 8px 28px rgba(0,0,0,0.45); --shadow-lg: 0 16px 40px rgba(0,0,0,0.6);
   }
 }

@@ -33,9 +33,105 @@
       </section>
 
       <section id="pageVocab" class="page">
-        <div class="comingSoon">
-          <div class="icon">🗂️</div>
-          <div>生词本马上就来</div>
+        <div id="vocabSignedOutGate" style="display:none">
+          <div class="comingSoon">
+            <div class="icon">🔒</div>
+            <div>还没有登录</div>
+            <div class="hint">生词本存在云端，去"我的"标签页登录后就能看到</div>
+          </div>
+        </div>
+
+        <div id="vocabMain" style="display:none">
+          <div class="vocabHeader">
+            <div class="select-wrap"><select id="bookSelect"></select></div>
+            <button class="iconBtn" id="newBookBtn" title="新建词书">＋</button>
+            <button class="iconBtn ghost" id="exportBtn" title="导出全部生词本备份">⭳</button>
+            <button class="iconBtn ghost" id="importBtn" title="从备份文件导入">⭱</button>
+            <input type="file" id="importFile" accept="application/json" style="display:none" />
+          </div>
+
+          <nav class="tabs">
+            <button class="tab active" id="tabManage">词表</button>
+            <button class="tab" id="tabCard">卡片复习</button>
+            <button class="tab" id="tabQuiz">默写复习</button>
+          </nav>
+
+          <div id="panelManage" class="panel active">
+            <div class="wordList" id="wordList"></div>
+            <div id="manageEmpty" class="emptyState" style="display:none">
+              <div class="emptyIcon">📭</div>
+              <div>这个词书还没有单词</div>
+              <div class="emptyHint">阅读的时候长按单词，收藏进来吧</div>
+            </div>
+          </div>
+
+          <div id="panelCard" class="panel">
+            <div class="reviewToolbar">
+              <label class="switch"><input type="checkbox" id="onlyDueCard" checked /><span>只复习到期单词</span></label>
+            </div>
+            <div class="progressBar"><div class="progressFill" id="cardProgressFill"></div></div>
+            <div class="progressText" id="cardProgress"></div>
+
+            <div class="cardStage">
+              <div class="cardDrag" id="cardDrag">
+                <div class="card" id="card">
+                  <div class="cardFace cardFront">
+                    <div class="cardWord"></div>
+                    <div class="cardPhon"></div>
+                    <button class="speakBtn cardSpeakBtn" title="朗读">🔊</button>
+                    <div class="flipHint">点击翻面</div>
+                  </div>
+                  <div class="cardFace cardBack">
+                    <div class="cardTranslation"></div>
+                    <div class="cardExplains"></div>
+                  </div>
+                </div>
+                <div class="swipeHint left">✗ 不认识</div>
+                <div class="swipeHint right">✓ 认识</div>
+              </div>
+            </div>
+
+            <div class="cardActions">
+              <button class="roundBtn dontknow" id="btnDontKnow" title="不认识">✗</button>
+              <button class="roundBtn vague" id="btnVague" title="模糊">?</button>
+              <button class="roundBtn know" id="btnKnow" title="认识">✓</button>
+            </div>
+            <div id="cardEmpty" class="emptyState" style="display:none"></div>
+          </div>
+
+          <div id="panelQuiz" class="panel">
+            <div class="reviewToolbar">
+              <label class="switch"><input type="checkbox" id="onlyDueQuiz" checked /><span>只复习到期单词</span></label>
+              <select id="quizDirection">
+                <option value="en2zh">英 → 中</option>
+                <option value="zh2en">中 → 英</option>
+              </select>
+            </div>
+            <div class="progressBar"><div class="progressFill" id="quizProgressFill"></div></div>
+            <div class="progressText" id="quizProgress"></div>
+
+            <div class="quizBox">
+              <div class="quizPrompt" id="quizPrompt"></div>
+              <div class="quizHint" id="quizHint"></div>
+              <input type="text" id="quizInput" autocomplete="off" placeholder="输入翻译，回车提交" />
+              <div class="quizFeedback" id="quizFeedback"></div>
+              <div class="quizActions">
+                <button class="primary" id="quizNext" style="display:none">下一题</button>
+              </div>
+            </div>
+            <div id="quizEmpty" class="emptyState" style="display:none"></div>
+          </div>
+        </div>
+
+        <div class="modalOverlay" id="modalOverlay">
+          <div class="modal">
+            <h3>新建词书</h3>
+            <input type="text" id="newBookInput" placeholder="词书名称" maxlength="30" />
+            <div class="modalActions">
+              <button id="modalCancel">取消</button>
+              <button class="primary" id="modalConfirm">创建</button>
+            </div>
+          </div>
         </div>
       </section>
 
@@ -73,5 +169,6 @@
   <script src="supabase-web-client.js"></script>
   <script src="book-store.js"></script>
   <script src="app.js"></script>
+  <script src="vocab.js"></script>
 </body>
 </html>
