@@ -280,6 +280,11 @@ body {
 .wordPopup .saveError { color: #ff8080; font-size: 12px; margin-top: 4px; }
 .wordPopup .error { color: #ff8080; }
 .wordPopup .loading { color: #9aa4b2; }
+.wordPopup .newbook { display: flex; gap: 4px; margin-top: 6px; }
+.wordPopup input[type=text] {
+  font: inherit; background: #2a3040; color: #f0f0f0; border: 1px solid #4a5266; border-radius: 5px;
+  padding: 3px 6px; width: 110px;
+}
 
 .toast {
   position: fixed; left: 50%; bottom: 90px; transform: translate(-50%, 20px); background: #22252e; color: #fff;

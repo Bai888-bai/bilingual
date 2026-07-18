@@ -192,22 +192,34 @@ async function wpRenderWordDetail(box, data) {
     <div class="actions">
       <select class="bookSelect"></select>
       <button class="saveBtn">☆ 收藏</button>
+      <button class="newBookBtn">新建词书</button>
     </div>
     <div class="saveError"></div>
+    <div class="newbook" style="display:none">
+      <input type="text" class="newBookName" placeholder="词书名称" />
+      <button class="confirmNewBook">创建</button>
+    </div>
   `;
   box.querySelector(".speakBtn").addEventListener("click", () => wpSpeak(data.query, data.audioUrl));
 
   const select = box.querySelector(".bookSelect");
   const saveBtn = box.querySelector(".saveBtn");
+  const newBookBtn = box.querySelector(".newBookBtn");
   const errorEl = box.querySelector(".saveError");
 
   if (!sbGetSession()) {
     select.style.display = "none";
+    newBookBtn.style.display = "none";
     saveBtn.disabled = true;
     saveBtn.textContent = "☆ 收藏";
     errorEl.textContent = "登录后才能收藏到生词本";
     return;
   }
+
+  const fillBooks = (books, selectId) => {
+    select.innerHTML = books.map((b) => `<option value="${b.id}">${wpEscapeHtml(b.name)}</option>`).join("");
+    if (selectId) select.value = selectId;
+  };
 
   try {
     let books = await sbListBooks();
@@ -215,10 +227,28 @@ async function wpRenderWordDetail(box, data) {
       await sbCreateBook("默认词书");
       books = await sbListBooks();
     }
-    select.innerHTML = books.map((b) => `<option value="${b.id}">${wpEscapeHtml(b.name)}</option>`).join("");
+    fillBooks(books);
   } catch (err) {
     errorEl.textContent = "词书加载失败：" + err.message;
   }
+
+  newBookBtn.addEventListener("click", () => {
+    box.querySelector(".newbook").style.display = "flex";
+  });
+  box.querySelector(".confirmNewBook").addEventListener("click", async () => {
+    const nameInput = box.querySelector(".newBookName");
+    const name = nameInput.value.trim();
+    if (!name) return;
+    try {
+      const newId = await sbCreateBook(name);
+      const books = await sbListBooks();
+      fillBooks(books, newId);
+      box.querySelector(".newbook").style.display = "none";
+      nameInput.value = "";
+    } catch (err) {
+      errorEl.textContent = "新建词书失败：" + err.message;
+    }
+  });
 
   saveBtn.addEventListener("click", async () => {
     if (saveBtn.disabled) return;
