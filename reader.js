@@ -10,6 +10,16 @@
   }
 })();
 
+let toastTimer = null;
+function showToast(msg) {
+  const el = document.getElementById("toast");
+  if (!el) return;
+  el.textContent = msg;
+  el.classList.add("show");
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove("show"), 2600);
+}
+
 async function runReader() {
   const params = new URLSearchParams(location.search);
   const bookId = Number(params.get("id"));
@@ -205,26 +215,44 @@ async function runReader() {
 
   async function rebuildAtSize(w, h) {
     const ratio = numPages > 1 ? pageFlip.getCurrentPageIndex() / (numPages - 1) : 0;
-    if (loader.repaginate) {
-      numPages = await loader.repaginate(w, h);
+    try {
+      if (loader.repaginate) {
+        numPages = await loader.repaginate(w, h);
+      }
+      // 顺序很重要：老的 pageFlip 实例内部还引用着当前这批 .leaf 节点，
+      // 必须先 destroy 它，再清空重建 DOM——反过来的话 destroy 会因为
+      // 找不到自己认识的节点而报错，而且是在没人 catch 的地方报错，
+      // 整个重建流程就此中断，容器留空、界面看起来像卡死了一样。
+      try {
+        pageFlip.destroy();
+      } catch (err) {
+        console.warn("pageFlip.destroy 出错，继续重建", err);
+      }
+      // destroy() 会把 #flipbook 这个容器本身也从 DOM 里摘掉，不只是清空
+      // 它的内容——不摘回来的话，下面 createPageFlip 里用
+      // document.querySelectorAll("#flipbook .leaf") 找叶子节点会因为
+      // #flipbook 已经不在文档树里而永远找不到，翻页组件就是空的。
+      if (!flipbookEl.isConnected) readerStageEl.appendChild(flipbookEl);
+      buildLeaves();
+      pageFlip = createPageFlip(w, h);
+      slider.max = numPages - 1;
+      const idx = Math.min(numPages - 1, Math.round(ratio * (numPages - 1)));
+      await renderAround(idx);
+      if (idx > 0) pageFlip.turnToPage(idx);
+      onFlip();
+    } catch (err) {
+      showToast("切换显示模式失败：" + err.message);
     }
-    buildLeaves();
-    pageFlip.destroy();
-    pageFlip = createPageFlip(w, h);
-    slider.max = numPages - 1;
-    const idx = Math.min(numPages - 1, Math.round(ratio * (numPages - 1)));
-    await renderAround(idx);
-    if (idx > 0) pageFlip.turnToPage(idx);
-    onFlip();
   }
 
   function setImmersive(on) {
     immersive = on;
     readerAppEl.classList.toggle("immersive", on);
-    requestAnimationFrame(() => {
-      const { w, h } = computeStageSize(on);
-      rebuildAtSize(w, h);
-    });
+    // 之前用 requestAnimationFrame 包了一层等下一帧再量尺寸，其实没必要——
+    // class 切换是同步的，紧接着调用 getBoundingClientRect 会强制浏览器
+    // 立刻把布局算好再返回，不用等额外一帧。
+    const { w, h } = computeStageSize(on);
+    rebuildAtSize(w, h);
   }
 
   document.addEventListener("click", (e) => {
