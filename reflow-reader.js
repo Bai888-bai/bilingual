@@ -337,8 +337,14 @@ const ReflowReader = (() => {
 
   function paginateBlocks(blocks, width, height, fontPx) {
     const ctx = measureCtx();
-    // 跟 .reflowPage 的 CSS 对齐：左右 padding 22px*2，内容区最宽 640px
+    // 跟 .reflowPage 的 CSS 对齐（padding: 30px 22px）：左右 padding 22px*2
+    // 影响可用宽度，内容区最宽 640px；上下 padding 30px*2 = 60px 也得从
+    // 可用高度里减掉——漏了这一步的话，分页算法会以为整个容器高度都能
+    // 装文字，实际渲染出来的 .reflowPage 内容区比这矮了 60px（box-sizing:
+    // border-box + padding 挤占的），最下面一两行文字就会超出可视区域，
+    // 被 overflow:hidden 裁掉，读者读到的其实是被截断的页面。
     const contentWidth = Math.max(120, Math.min(640, width - 44));
+    const contentHeight = Math.max(100, height - 60);
 
     const pages = [];
     let current = [];
@@ -352,11 +358,11 @@ const ReflowReader = (() => {
         currentHeight = 0;
       }
       const h = estimateHeight(ctx, block, contentWidth, fontPx);
-      if (current.length === 0 && h > height) {
-        splitLongBlock(ctx, block, contentWidth, fontPx, height, pages);
+      if (current.length === 0 && h > contentHeight) {
+        splitLongBlock(ctx, block, contentWidth, fontPx, contentHeight, pages);
         continue;
       }
-      if (current.length > 0 && currentHeight + h > height) {
+      if (current.length > 0 && currentHeight + h > contentHeight) {
         pages.push(current);
         current = [];
         currentHeight = 0;
