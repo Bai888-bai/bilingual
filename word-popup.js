@@ -70,14 +70,31 @@ function wpCreatePopup(x, y) {
   wpDebug("createPopup", { popupInstanceId, x, y });
   const closeOnOutside = (e) => {
     const contains = box.contains(e.target);
+    // 光靠 e.target 是不是弹窗的后代不够可靠——同一个页面里还有翻页库
+    // 之类别的脚本在跑，不确定它们会不会在某些情况下影响事件目标的
+    // 判定。改成同时看点击的鼠标坐标是否落在弹窗当前的可见范围内：
+    // 只要坐标在框里，不管 e.target 报的是什么元素，都不当成"点在
+    // 外面"处理，避免弹窗被误关。
+    const rect = box.getBoundingClientRect();
+    const insideByCoords =
+      typeof e.clientX === "number" &&
+      e.clientX >= rect.left &&
+      e.clientX <= rect.right &&
+      e.clientY >= rect.top &&
+      e.clientY <= rect.bottom;
     wpDebug("closeOnOutside fired", {
       popupInstanceId,
       contains,
+      insideByCoords,
       targetTag: e.target && e.target.tagName,
+      targetId: e.target && e.target.id,
       targetClass: e.target && e.target.className,
+      clientX: e.clientX,
+      clientY: e.clientY,
+      rect: { left: rect.left, top: rect.top, right: rect.right, bottom: rect.bottom },
       boxStillInDom: document.body.contains(box),
     });
-    if (!contains) {
+    if (!contains && !insideByCoords) {
       wpRemovePopup();
     }
   };

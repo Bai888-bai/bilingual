@@ -96,7 +96,21 @@
       // 弹窗外的旧选区——只看 selInsidePopup（选区本身在不在弹窗内）
       // 不够，还得看这次点击本身是不是发生在弹窗里，是的话无论选区是
       // 什么都不该当成"划句子翻译"处理。
-      const clickInsidePopup = popupHost && e.target && e.target.closest && popupHost.contains(e.target);
+      // e.target 是不是弹窗后代这个判断本身也不一定可靠（同页面还有
+      // 翻页库等脚本在跑），所以再加一层坐标兜底：只要这次点击的坐标
+      // 落在弹窗当前的可见范围内，也一律当成"点在弹窗里"处理。
+      let clickInsidePopupByCoords = false;
+      if (popupHost) {
+        const rect = popupHost.getBoundingClientRect();
+        clickInsidePopupByCoords =
+          typeof e.clientX === "number" &&
+          e.clientX >= rect.left &&
+          e.clientX <= rect.right &&
+          e.clientY >= rect.top &&
+          e.clientY <= rect.bottom;
+      }
+      const clickInsidePopup =
+        (popupHost && e.target && e.target.closest && popupHost.contains(e.target)) || clickInsidePopupByCoords;
       if (selText && !selInsidePopup && !clickInsidePopup && /\s/.test(selText) && selText.split(/\s+/).length > 1) {
         handleSentence(selText, e.clientX, e.clientY);
         pendingSpan = null;
