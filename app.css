@@ -93,16 +93,25 @@ main#pages { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; }
 
 /* 书架背景：分层的木纹渐变（竖向纹理条纹 + 明暗过渡 + 顶部内凹阴影模拟
    格子进深），比纯色块更接近木头，也不用真的去下载一张木纹图片。
-   每本书自己的 border-bottom 当"搁板"——同一排书的搁板会自然连成一条
-   通长的板，不需要让背景条纹跟 flex-wrap 换行精确对齐。撑满整个页面
-   （flex:1），不再是页面里悬浮的一张圆角卡片，书跟屏幕边缘之间的留白
-   靠 padding，不是靠"木纹只占页面中间一块"。 */
+   搁板缝也是背景的一部分——按每本书的高度(200px)+行距(16px)=216px
+   为周期，在每个周期靠近底部的地方画一条阴影+高光模拟搁板厚度，从
+   容器顶部内边距开始重复到底。这样不管这一排有没有书，搁板缝都在，
+   书站在上面时挡住搁板中间那段、露出两侧和书缝之间的部分，看起来就是
+   书贴着搁板立着；书之间/书右边的空当也是同一条线延伸过去的，不是
+   分开画的两截对不上。 */
 .bookGrid {
   display: flex; flex-wrap: wrap; align-items: flex-end; align-content: flex-start; gap: 0 6px;
   flex: 1; padding: 28px 20px 0;
-  background:
+  background-image:
     repeating-linear-gradient(90deg, rgba(255,255,255,0.05) 0px, rgba(255,255,255,0.05) 1px, transparent 1px, transparent 7px),
+    repeating-linear-gradient(to bottom,
+      transparent 0, transparent 190px,
+      rgba(43,26,10,0.42) 190px, rgba(43,26,10,0.42) 198px,
+      rgba(255,228,180,0.35) 198px, rgba(255,228,180,0.35) 200px,
+      transparent 200px, transparent 216px
+    ),
     linear-gradient(180deg, #c99b5f, #a97c42 55%, #8a5f30);
+  background-position: 0 0, 0 28px, 0 0;
   box-shadow: inset 0 26px 30px -18px rgba(43,26,10,0.55);
 }
 .bookSpine {
@@ -110,20 +119,10 @@ main#pages { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; }
   width: 58px; height: 200px; margin-bottom: 16px;
   border-radius: 3px 5px 5px 3px; background-size: cover; background-position: center;
   box-shadow: 2px 6px 10px rgba(0,0,0,0.4), inset -8px 0 14px rgba(0,0,0,0.28), inset 2px 0 0 rgba(255,255,255,0.14);
-  border-bottom: 10px solid transparent; border-image: linear-gradient(180deg, #b98a4c, #6b431f) 1;
   transition: transform 0.15s ease;
 }
 .bookSpine:hover { transform: translateY(-10px) rotate(-1deg); z-index: 2; }
 .bookSpine.hasCover { background-color: #333; }
-
-/* 书没占满的地方不能就是一整块空木纹——那样看着像书飘在空中，不像
-   放在架子上。app.js 会补一批看不见内容、只有搁板边的空位把可视高度
-   填满，跟真书架"没摆满的格子还是看得出隔板"一个道理。用跟 .bookSpine
-   完全一样的高度/margin/搁板样式，保证行跟行之间的间距对得上。 */
-.shelfGhostRow {
-  flex-basis: 100%; height: 200px; margin-bottom: 16px; pointer-events: none;
-  border-bottom: 10px solid transparent; border-image: linear-gradient(180deg, #b98a4c, #6b431f) 1;
-}
 .bookSpine.lifting { transition: transform 0.22s ease, opacity 0.22s ease; transform: translateY(-26px) scale(1.06) rotate(-2deg); opacity: 0; }
 
 /* 拖拽排序：抓起的书原地半透明占位，跟在指针后面飘的是一个克隆出来的

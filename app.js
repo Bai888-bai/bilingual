@@ -269,27 +269,6 @@ async function renderLibrary() {
   });
 
   setupDragReorder(grid);
-  fillEmptyShelfRows(grid);
-}
-
-// 书没摆满一屏的时候，flex-wrap 只会占书本身那么高，下面剩的可视高度
-// 就是一整块没有分隔的木纹，看着像书飘在空中。量一下书架页面实际可用
-// 高度，再补够"看不见内容、只有搁板"的空行，把下面也摆成看得出隔层的
-// 空书架，而不是一整块没有格子感的木板。
-function fillEmptyShelfRows(grid) {
-  grid.querySelectorAll(".shelfGhostRow").forEach((el) => el.remove());
-  const page = document.getElementById("pageLibrary");
-  const targetH = page.clientHeight;
-  const usedH = grid.scrollHeight;
-  const slot = 216; // .bookSpine/.shelfGhostRow 的 height(200) + margin-bottom(16)
-  const need = Math.max(2, Math.ceil((targetH - usedH) / slot) + 1);
-  const frag = document.createDocumentFragment();
-  for (let i = 0; i < need; i++) {
-    const row = document.createElement("div");
-    row.className = "shelfGhostRow";
-    frag.appendChild(row);
-  }
-  grid.appendChild(frag);
 }
 renderLibrary();
 
