@@ -8,7 +8,7 @@
 // 来说，"用户能看到最新版本"更重要，离线时依然能退回缓存正常使用。
 //
 // 修改这里之后记得把 CACHE_NAME 的版本号也改一下，方便区分。
-const CACHE_NAME = "bilingual-reader-v2";
+const CACHE_NAME = "bilingual-reader-v3";
 const SHELL_FILES = [
   "./",
   "./index.html",
@@ -23,6 +23,7 @@ const SHELL_FILES = [
   "./reader.css",
   "./reader.js",
   "./pdf-reader.js",
+  "./reflow-reader.js",
   "./epub-reader.js",
   "./word-popup.js",
   "./word-interact.js",
