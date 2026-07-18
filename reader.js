@@ -21,6 +21,7 @@ async function runReader() {
   const flipbookEl = document.getElementById("flipbook");
   const bottomBar = document.getElementById("readerBottomBar");
   const slider = document.getElementById("pageSlider");
+  const modeToggleBtn = document.getElementById("modeToggleBtn");
 
   document.getElementById("backBtn").addEventListener("click", () => {
     location.href = "index.html";
@@ -39,10 +40,41 @@ async function runReader() {
   titleEl.textContent = book.title;
   document.title = book.title + " - 中英阅读助手";
 
+  // "重排" 是把 PDF 的原始文字取出来按固定字号重新分页，字看得清楚，
+  // 但遇到复杂排版（图表/分栏）会丢失版面；"原版" 是把每页画成图片，
+  // 忠实还原原书样子但字号完全取决于原书排版，可能很小。默认给重排，
+  // 每本书自己记住上次选的模式。
+  const reflowKey = "btr-pdf-reflow-" + bookId;
+  let useReflow = book.type === "pdf" && localStorage.getItem(reflowKey) !== "0";
+  if (book.type === "pdf") {
+    modeToggleBtn.style.display = "inline-block";
+    modeToggleBtn.textContent = useReflow ? "Aa 重排" : "原版";
+    modeToggleBtn.title = useReflow ? "切换到原版排版" : "切换到重排模式";
+    modeToggleBtn.addEventListener("click", () => {
+      localStorage.setItem(reflowKey, useReflow ? "0" : "1");
+      location.reload();
+    });
+  }
+
+  // "stretch" 模式实测会无视 maxWidth，只要容器够宽就一直用双页跨页显示，
+  // 双页模式下每页只分到一半宽度，字被压小一倍。改成 "fixed" 模式 +
+  // 自己按当前可视区域算一个单页宽高，能强制稳定单页显示，字大小也可控。
+  // 这个尺寸也是重排模式排版时用来测量分页的依据，所以要在加载书之前先算好。
+  const stageRect = document.getElementById("readerStage").getBoundingClientRect();
+  const pageW = Math.max(320, Math.min(720, stageRect.width - 24));
+  const pageH = Math.max(420, stageRect.height - 16);
+
   let loader;
   try {
-    loadingTextEl.textContent = book.type === "pdf" ? "正在解析 PDF…" : "正在解析 EPUB…";
-    loader = book.type === "pdf" ? await PdfReader.load(book.fileBlob) : await EpubReader.load(book.fileBlob);
+    if (book.type === "pdf") {
+      loadingTextEl.textContent = "正在解析 PDF…";
+      loader = useReflow
+        ? await ReflowReader.load(book.fileBlob, { pageW, pageH }, (msg) => { loadingTextEl.textContent = msg; })
+        : await PdfReader.load(book.fileBlob);
+    } else {
+      loadingTextEl.textContent = "正在解析 EPUB…";
+      loader = await EpubReader.load(book.fileBlob);
+    }
     if (loader.title) {
       titleEl.textContent = loader.title;
     }
@@ -70,13 +102,6 @@ async function runReader() {
   flipbookEl.style.display = "block";
   bottomBar.style.display = "flex";
   slider.max = numPages - 1;
-
-  // "stretch" 模式实测会无视 maxWidth，只要容器够宽就一直用双页跨页显示，
-  // 双页模式下每页只分到一半宽度，字被压小一倍。改成 "fixed" 模式 +
-  // 自己按当前可视区域算一个单页宽高，能强制稳定单页显示，字大小也可控。
-  const stageRect = document.getElementById("readerStage").getBoundingClientRect();
-  const pageW = Math.max(320, Math.min(720, stageRect.width - 24));
-  const pageH = Math.max(420, stageRect.height - 16);
 
   const pageFlip = new St.PageFlip(flipbookEl, {
     width: pageW,

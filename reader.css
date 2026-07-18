@@ -72,6 +72,25 @@ body {
 .epubPage .btr-w { cursor: pointer; }
 .epubPage .btr-w.translated { color: #2f6bff; font-weight: 600; border-bottom: 1px dotted rgba(47,107,255,0.5); }
 
+/* PDF"重排"模式：真实文字重新分页显示，不是原书的图片页面，字号/行高
+   由这里固定控制，跟原 PDF 排的字号大小完全无关，保证任何书都能看清楚。 */
+.reflowPage {
+  height: 100%; box-sizing: border-box; overflow: hidden; padding: 30px 22px;
+  font-size: 19px; line-height: 1.75; font-family: Georgia, "Songti SC", "PingFang SC", serif;
+  color: #262b36;
+}
+.reflowPage > * { max-width: 640px; margin-left: auto; margin-right: auto; }
+.reflowPage .heading { font-size: 1.3em; font-weight: 700; text-align: center; line-height: 1.4; margin: 0.4em auto 0.9em; }
+.reflowPage p { margin: 0 auto 1em; text-indent: 1.6em; }
+.reflowPage .btr-w { cursor: pointer; }
+.reflowPage .btr-w.translated { color: #2f6bff; font-weight: 600; border-bottom: 1px dotted rgba(47,107,255,0.5); }
+
+.readerTopBar .modeToggleBtn {
+  border: none; background: rgba(255,255,255,0.1); color: #fff; height: 28px; padding: 0 10px; border-radius: 14px;
+  font-size: 12px; cursor: pointer; flex-shrink: 0;
+}
+.readerTopBar .modeToggleBtn:hover { background: rgba(255,255,255,0.18); }
+
 .readerNav {
   position: absolute; top: 0; bottom: 0; width: 15%; display: flex; align-items: center;
   justify-content: center; opacity: 0; transition: opacity 0.15s ease; cursor: pointer; z-index: 15;
