@@ -104,11 +104,14 @@ main#pages { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; }
   flex: 1; padding: 28px 20px 0;
   background-image:
     repeating-linear-gradient(90deg, rgba(255,255,255,0.05) 0px, rgba(255,255,255,0.05) 1px, transparent 1px, transparent 7px),
+    /* 搁板本身要有点厚度感：先是书底边一条薄高光（板子前沿反光），接着
+       一段实打实的阴影（板子有厚度，挡住了后面的光），再慢慢往下一层
+       敞开的格子里淡出——纯两色硬边看着像裂缝，不像一块有厚度的木板。 */
     repeating-linear-gradient(to bottom,
-      transparent 0, transparent 190px,
-      rgba(43,26,10,0.42) 190px, rgba(43,26,10,0.42) 198px,
-      rgba(255,228,180,0.35) 198px, rgba(255,228,180,0.35) 200px,
-      transparent 200px, transparent 216px
+      transparent 0, transparent 194px,
+      rgba(255,236,198,0.6) 194px, rgba(255,236,198,0.6) 200px,
+      rgba(24,14,6,0.6) 200px, rgba(24,14,6,0.55) 208px,
+      rgba(24,14,6,0.22) 208px, rgba(24,14,6,0) 216px
     ),
     linear-gradient(180deg, #c99b5f, #a97c42 55%, #8a5f30);
   background-position: 0 0, 0 28px, 0 0;
@@ -124,6 +127,14 @@ main#pages { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; }
 .bookSpine:hover { transform: translateY(-10px) rotate(-1deg); z-index: 2; }
 .bookSpine.hasCover { background-color: #333; }
 .bookSpine.lifting { transition: transform 0.22s ease, opacity 0.22s ease; transform: translateY(-26px) scale(1.06) rotate(-2deg); opacity: 0; }
+/* 每本书自己再带一小片接触阴影，贴着书本体走、不依赖跟背景搁板线对不
+   对得齐——不管背景那条线算得准不准，书底下总归有个"压在东西上"的
+   影子，视觉上就立住了，比单靠一条线更明确地说明"这本书站在架子上"。 */
+.bookSpine::after {
+  content: ""; position: absolute; left: 3px; right: 3px; bottom: -3px; height: 7px;
+  background: radial-gradient(ellipse at center, rgba(20,12,5,0.5), transparent 72%);
+  pointer-events: none;
+}
 
 /* 拖拽排序：抓起的书原地半透明占位，跟在指针后面飘的是一个克隆出来的
    "幽灵"元素，松手悬停的目标书用虚线框提示"放这儿"。 */
