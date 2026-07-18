@@ -66,8 +66,107 @@ function revokeCoverUrls() {
   coverObjectUrls = [];
 }
 
-async function renderLibrary() {
+// 书架顺序是读者手动拖出来的，跟"什么时候导入的"（addedAt）没关系，
+// 单独存一个 shelfOrder 字段。老数据/新导入的书没有这个字段，第一次
+// 读到的时候按当前（按 addedAt 排的）顺序垫一个初始值再存回去，之后
+// 拖拽调整的就都是这个顺序了。
+async function getShelfBooks() {
   const books = await listBooksLocal();
+  const toBackfill = [];
+  books.forEach((b, i) => {
+    if (b.shelfOrder == null) {
+      b.shelfOrder = i;
+      toBackfill.push(b);
+    }
+  });
+  books.sort((a, b) => a.shelfOrder - b.shelfOrder);
+  for (const b of toBackfill) await updateBookLocal(b);
+  return books;
+}
+
+async function reorderBooks(draggedId, targetId) {
+  const books = await getShelfBooks();
+  const fromIdx = books.findIndex((b) => b.id === draggedId);
+  const toIdx = books.findIndex((b) => b.id === targetId);
+  if (fromIdx === -1 || toIdx === -1 || fromIdx === toIdx) return;
+  const [moved] = books.splice(fromIdx, 1);
+  books.splice(toIdx, 0, moved);
+  for (let i = 0; i < books.length; i++) {
+    if (books[i].shelfOrder !== i) {
+      books[i].shelfOrder = i;
+      await updateBookLocal(books[i]);
+    }
+  }
+}
+
+// 拖拽排序：抬起手指/鼠标按下的判定阈值内先不算拖拽（避免手一抖就把
+// 正常的点击开书打断了），过了阈值才真正进入拖拽状态——抓起的书原地
+// 半透明占位，另外克隆一个"幽灵"跟着指针飘，比原生 HTML5 拖拽 API
+// 那种生硬的半透明截图跟手感强，触屏上兼容性也更好。
+let justDragged = false;
+function setupDragReorder(grid) {
+  let dragCard = null;
+  let ghost = null;
+  let dragging = false;
+  let startX = 0, startY = 0;
+  let targetCard = null;
+
+  function onMove(e) {
+    const dx = e.clientX - startX;
+    const dy = e.clientY - startY;
+    if (!dragging) {
+      if (Math.hypot(dx, dy) < 6) return;
+      dragging = true;
+      dragCard.classList.add("dragSource");
+      ghost = dragCard.cloneNode(true);
+      ghost.classList.add("dragGhost");
+      ghost.style.width = dragCard.offsetWidth + "px";
+      ghost.style.height = dragCard.offsetHeight + "px";
+      document.body.appendChild(ghost);
+    }
+    ghost.style.left = e.clientX - ghost.offsetWidth / 2 + "px";
+    ghost.style.top = e.clientY - ghost.offsetHeight / 2 + "px";
+
+    if (targetCard) targetCard.classList.remove("dragOver");
+    ghost.style.display = "none";
+    const el = document.elementFromPoint(e.clientX, e.clientY);
+    ghost.style.display = "";
+    const overCard = el ? el.closest(".bookSpine") : null;
+    targetCard = overCard && overCard !== dragCard ? overCard : null;
+    if (targetCard) targetCard.classList.add("dragOver");
+  }
+
+  async function onUp() {
+    document.removeEventListener("pointermove", onMove);
+    document.removeEventListener("pointerup", onUp);
+    if (ghost) { ghost.remove(); ghost = null; }
+    if (dragCard) dragCard.classList.remove("dragSource");
+    if (targetCard) targetCard.classList.remove("dragOver");
+    if (dragging && dragCard && targetCard) {
+      justDragged = true;
+      await reorderBooks(Number(dragCard.dataset.id), Number(targetCard.dataset.id));
+      renderLibrary();
+    }
+    dragCard = null;
+    targetCard = null;
+    dragging = false;
+  }
+
+  grid.querySelectorAll(".bookSpine").forEach((card) => {
+    card.addEventListener("pointerdown", (e) => {
+      if (e.button !== 0 && e.pointerType === "mouse") return;
+      if (e.target.closest(".bookCoverBtn, .bookDeleteBtn, .spineLabel")) return;
+      dragCard = card;
+      startX = e.clientX;
+      startY = e.clientY;
+      document.addEventListener("pointermove", onMove);
+      document.addEventListener("pointerup", onUp);
+    });
+  });
+}
+
+async function renderLibrary() {
+  const books = await getShelfBooks();
   const grid = document.getElementById("bookGrid");
   const empty = document.getElementById("libraryEmpty");
   revokeCoverUrls();
@@ -155,14 +254,22 @@ async function renderLibrary() {
 
   // 点书脊跳去阅读器之前，先让它往上"抽离书架"飘一下再跳转，
   // 不是手一点屏幕就唰地跳到另一个页面，翻书这个动作要有点存在感。
+  // 刚拖拽完松手，浏览器还是会照样在同一个元素上补发一个 click 事件——
+  // 用 justDragged 标记把这一次点击吞掉，不然拖完顺手就被当成点开书了。
   grid.querySelectorAll(".bookSpine").forEach((card) => {
     card.addEventListener("click", () => {
+      if (justDragged) {
+        justDragged = false;
+        return;
+      }
       card.classList.add("lifting");
       setTimeout(() => {
         location.href = `reader.html?id=${card.dataset.id}`;
       }, 200);
     });
   });
+
+  setupDragReorder(grid);
 }
 renderLibrary();
 

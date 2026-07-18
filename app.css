@@ -61,6 +61,12 @@ main#pages { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; }
 .page.active { display: block; animation: fadeIn 0.2s ease; }
 @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
 
+/* 书架要铺满整个页面才像个书架，不是页面里一个贴了木纹背景的圆角卡片——
+   这一页不留 padding，留白全部挪到 .bookGrid 内部（书跟屏幕边缘之间的
+   距离），撑满整个可视高度，书少的时候木纹也铺到底，不会露出下面的
+   米黄色页面背景。 */
+#pageLibrary.page.active { display: flex; flex-direction: column; padding: 0; min-height: 100%; }
+
 .tabBar {
   display: flex; background: var(--surface); border-top: 1px solid var(--border);
   padding-bottom: var(--safe-bottom); flex-shrink: 0;
@@ -88,15 +94,16 @@ main#pages { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; }
 /* 书架背景：分层的木纹渐变（竖向纹理条纹 + 明暗过渡 + 顶部内凹阴影模拟
    格子进深），比纯色块更接近木头，也不用真的去下载一张木纹图片。
    每本书自己的 border-bottom 当"搁板"——同一排书的搁板会自然连成一条
-   通长的板，不需要让背景条纹跟 flex-wrap 换行精确对齐。 */
+   通长的板，不需要让背景条纹跟 flex-wrap 换行精确对齐。撑满整个页面
+   （flex:1），不再是页面里悬浮的一张圆角卡片，书跟屏幕边缘之间的留白
+   靠 padding，不是靠"木纹只占页面中间一块"。 */
 .bookGrid {
-  display: flex; flex-wrap: wrap; align-items: flex-end; gap: 0 4px;
-  margin-top: 6px; padding: 26px 16px 0; border-radius: var(--radius);
+  display: flex; flex-wrap: wrap; align-items: flex-end; align-content: flex-start; gap: 0 6px;
+  flex: 1; padding: 28px 20px 0;
   background:
     repeating-linear-gradient(90deg, rgba(255,255,255,0.05) 0px, rgba(255,255,255,0.05) 1px, transparent 1px, transparent 7px),
     linear-gradient(180deg, #c99b5f, #a97c42 55%, #8a5f30);
-  box-shadow: inset 0 26px 30px -18px rgba(43,26,10,0.55), inset 0 -4px 10px rgba(43,26,10,0.25);
-  border: 1px solid #6b4522;
+  box-shadow: inset 0 26px 30px -18px rgba(43,26,10,0.55);
 }
 .bookSpine {
   position: relative; cursor: pointer; flex-shrink: 0;
@@ -110,13 +117,23 @@ main#pages { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; }
 .bookSpine.hasCover { background-color: #333; }
 .bookSpine.lifting { transition: transform 0.22s ease, opacity 0.22s ease; transform: translateY(-26px) scale(1.06) rotate(-2deg); opacity: 0; }
 
-/* 书名标签：不管有没有封面都常驻显示，贴在书脊底部，跟图书馆真实的
-   索书号贴纸一个思路——小小一条，字够小也认得出，点一下可以重命名。 */
+/* 拖拽排序：抓起的书原地半透明占位，跟在指针后面飘的是一个克隆出来的
+   "幽灵"元素，松手悬停的目标书用虚线框提示"放这儿"。 */
+.bookSpine.dragSource { opacity: 0.3; }
+.bookSpine.dragOver { outline: 2px dashed var(--primary-tint); outline-offset: 3px; }
+.dragGhost {
+  position: fixed; z-index: 1000; pointer-events: none;
+  transform: scale(1.08) rotate(-4deg); box-shadow: 0 16px 32px rgba(0,0,0,0.5);
+}
+
+/* 书名标签：默认藏起来，鼠标移上去才浮现——常驻显示反而觉得每本书脊上
+   都贴了张纸条，不好看；平时就看颜色/封面认书，需要确认书名再划过去。 */
 .spineLabel {
-  position: absolute; left: 3px; right: 3px; bottom: 13px;
+  position: absolute; left: 3px; right: 3px; bottom: 13px; opacity: 0; transition: opacity 0.15s ease;
   background: rgba(251,245,232,0.94); color: #2b2015; border-radius: 2px;
   padding: 2px 3px; box-shadow: 0 1px 3px rgba(0,0,0,0.35); cursor: text;
 }
+.bookSpine:hover .spineLabel, .spineLabel:focus-within { opacity: 1; }
 .spineLabel .spineLabelText {
   display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden;
   font-size: 9px; line-height: 1.25; text-align: center; word-break: break-word; outline: none;
