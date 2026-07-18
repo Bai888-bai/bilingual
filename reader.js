@@ -72,10 +72,19 @@ async function runReader() {
   let fontSize = Number(localStorage.getItem(fontSizeKey)) || 21;
   document.documentElement.style.setProperty("--reflow-font-size", fontSize + "px");
 
+  // 沉浸模式下顶部/底部工具栏是 display:none，readerStage 会把腾出来的
+  // 整块空间都占满，分页也是照这个"工具栏收起后"的高度来算的。但用户
+  // 那边发现书页底部的字会被系统任务栏之类的东西挡住——不管具体是
+  // 窗口位置、缩放比例还是别的什么原因，稳妥的办法是不管沉浸模式收没
+  // 收起，分页高度都不要超过"工具栏展开时" readerStage 实际能用的
+  // 高度，把 readerBottomBar 展开后的那部分空间当成硬性下边界预留出来，
+  // 不让内容顶到那么下面。
+  const BOTTOM_BAR_SAFETY = 46;
+
   function computeStageSize(isImmersive, isSpread) {
     const rect = readerStageEl.getBoundingClientRect();
     const sidePad = isImmersive ? 6 : 24;
-    const topBotPad = isImmersive ? 6 : 16;
+    const topBotPad = (isImmersive ? 6 : 16) + (isImmersive ? BOTTOM_BAR_SAFETY : 0);
     const availW = rect.width - sidePad;
     const availH = Math.max(420, rect.height - topBotPad);
     if (isSpread) {
