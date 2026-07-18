@@ -16,21 +16,27 @@ body {
 /* 沉浸模式：点书页中间收起上下工具栏，把这部分屏幕还给书本身。
    工具栏一 display:none，readerStage（flex:1）会自动占满腾出来的空间，
    reader.js 那边会拿到新的可视区域尺寸重新计算分页并重建翻页组件。 */
+/* !important 是必须的：readerBottomBar 加载完之后会被 reader.js 设成
+   inline style="display:flex" 来（从 HTML 里默认的 display:none）显示
+   出来，普通的 class 选择器规则优先级干不过内联样式，不加 !important
+   沉浸模式切换了也白切，工具栏纹丝不动。 */
 .readerApp.immersive .readerTopBar,
-.readerApp.immersive .readerBottomBar { display: none; }
+.readerApp.immersive .readerBottomBar { display: none !important; }
 .readerApp.immersive .readerStage { padding: 3px; }
 
+/* 暖色调，跟下面米黄色的书页更搭——用冷色系深蓝灰当工具栏总感觉像在用
+   一个"软件"而不是在"看书"。 */
 .readerTopBar {
   display: flex; align-items: center; gap: 10px; padding: calc(8px + var(--safe-top)) 14px 8px;
-  background: #1d2029; color: #fff; flex-shrink: 0; z-index: 20;
+  background: #2b2015; color: #ede1c8; flex-shrink: 0; z-index: 20;
   box-shadow: 0 2px 10px rgba(0,0,0,0.25);
 }
 .readerTopBar .backBtn {
-  border: none; background: rgba(255,255,255,0.1); color: #fff; width: 30px; height: 30px; border-radius: 50%;
+  border: none; background: rgba(255,255,255,0.1); color: #ede1c8; width: 30px; height: 30px; border-radius: 50%;
   font-size: 15px; cursor: pointer; flex-shrink: 0; transition: background 0.15s ease;
 }
 .readerTopBar .backBtn:hover { background: rgba(255,255,255,0.18); }
-.readerTitle { flex: 1; font-size: 13px; color: #c7cbd6; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.readerTitle { flex: 1; font-size: 13px; color: #cabb9b; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .readerProgress { display: none; } /* 页码挪到底部实时显示，顶部不再重复 */
 
 .readerStage {
@@ -93,10 +99,16 @@ body {
 .reflowPage .btr-w.translated { color: #2f6bff; font-weight: 600; border-bottom: 1px dotted rgba(47,107,255,0.5); }
 
 .readerTopBar .modeToggleBtn {
-  border: none; background: rgba(255,255,255,0.1); color: #fff; height: 28px; padding: 0 10px; border-radius: 14px;
+  border: none; background: rgba(255,255,255,0.1); color: #ede1c8; height: 28px; padding: 0 10px; border-radius: 14px;
   font-size: 12px; cursor: pointer; flex-shrink: 0;
 }
 .readerTopBar .modeToggleBtn:hover { background: rgba(255,255,255,0.18); }
+.readerTopBar .soundToggleBtn {
+  border: none; background: rgba(255,255,255,0.1); color: #ede1c8; width: 28px; height: 28px; border-radius: 50%;
+  font-size: 13px; cursor: pointer; flex-shrink: 0;
+}
+.readerTopBar .soundToggleBtn:hover { background: rgba(255,255,255,0.18); }
+.readerTopBar .soundToggleBtn.muted { opacity: 0.5; }
 
 .readerNav {
   position: absolute; top: 0; bottom: 0; width: 15%; display: flex; align-items: center;
@@ -110,19 +122,19 @@ body {
 
 .readerBottomBar {
   display: flex; flex-direction: column; align-items: center; gap: 6px;
-  padding: 8px 14px calc(10px + var(--safe-bottom)); background: #1d2029; flex-shrink: 0;
+  padding: 8px 14px calc(10px + var(--safe-bottom)); background: #2b2015; flex-shrink: 0;
   box-shadow: 0 -2px 10px rgba(0,0,0,0.25);
 }
 .readerBottomRow { display: flex; align-items: center; justify-content: center; gap: 14px; width: 100%; }
 .readerBottomBar button {
-  border: none; background: rgba(255,255,255,0.1); color: #fff; width: 36px; height: 36px; border-radius: 50%;
+  border: none; background: rgba(255,255,255,0.1); color: #ede1c8; width: 36px; height: 36px; border-radius: 50%;
   font-size: 15px; cursor: pointer; flex-shrink: 0; transition: background 0.15s ease, transform 0.1s ease;
 }
 .readerBottomBar button:hover { background: rgba(255,255,255,0.18); }
 .readerBottomBar button:active { transform: scale(0.92); }
 .readerBottomBar button:disabled { opacity: 0.35; cursor: default; }
-.readerBottomBar input[type=range] { flex: 1; max-width: 420px; accent-color: var(--primary); }
-.readerPageNum { font-size: 12px; color: #9aa4b2; letter-spacing: 0.3px; min-width: 60px; text-align: center; }
+.readerBottomBar input[type=range] { flex: 1; max-width: 420px; accent-color: #c9a15f; }
+.readerPageNum { font-size: 12px; color: #baa584; letter-spacing: 0.3px; min-width: 60px; text-align: center; }
 
 /* 词语浮窗（跟浏览器扩展 ui.js 的设计一致） */
 .wordPopup {

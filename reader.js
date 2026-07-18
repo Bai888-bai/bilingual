@@ -32,10 +32,73 @@ async function runReader() {
   const bottomBar = document.getElementById("readerBottomBar");
   const slider = document.getElementById("pageSlider");
   const modeToggleBtn = document.getElementById("modeToggleBtn");
+  const soundToggleBtn = document.getElementById("soundToggleBtn");
+  const readerAppEl = document.querySelector(".readerApp");
+  const readerStageEl = document.getElementById("readerStage");
 
   document.getElementById("backBtn").addEventListener("click", () => {
     location.href = "index.html";
   });
+
+  // 沉浸模式默认就是开着的——打开书直接给最大阅读区域，不用先看一眼
+  // 工具栏晃一下再等它收起去。双击书页会把工具栏叫出来，再双击收回去。
+  let immersive = true;
+  readerAppEl.classList.add("immersive");
+
+  function computeStageSize(isImmersive) {
+    const rect = readerStageEl.getBoundingClientRect();
+    const sidePad = isImmersive ? 6 : 24;
+    const topBotPad = isImmersive ? 6 : 16;
+    const maxW = isImmersive ? 960 : 720;
+    return {
+      w: Math.max(320, Math.min(maxW, rect.width - sidePad)),
+      h: Math.max(420, rect.height - topBotPad),
+    };
+  }
+
+  // 翻页音效：不打包一个真实的翻书录音文件——纯前端静态站没有构建流程，
+  // 塞一个二进制音频文件进仓库还要操心版权来源，不如用 Web Audio 现场
+  // 合成一段短促的"唰"声（滤波白噪声 + 快速衰减），够用且零依赖。
+  const soundKey = "btr-flip-sound";
+  let soundOn = localStorage.getItem(soundKey) !== "0";
+  let audioCtx = null;
+  function updateSoundBtn() {
+    soundToggleBtn.textContent = soundOn ? "🔊" : "🔇";
+    soundToggleBtn.classList.toggle("muted", !soundOn);
+    soundToggleBtn.title = soundOn ? "关闭翻页音效" : "开启翻页音效";
+  }
+  updateSoundBtn();
+  soundToggleBtn.addEventListener("click", () => {
+    soundOn = !soundOn;
+    localStorage.setItem(soundKey, soundOn ? "1" : "0");
+    updateSoundBtn();
+  });
+  function playFlipSound() {
+    if (!soundOn) return;
+    try {
+      audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
+      const dur = 0.22;
+      const buffer = audioCtx.createBuffer(1, audioCtx.sampleRate * dur, audioCtx.sampleRate);
+      const data = buffer.getChannelData(0);
+      for (let i = 0; i < data.length; i++) {
+        data[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / data.length, 2);
+      }
+      const noise = audioCtx.createBufferSource();
+      noise.buffer = buffer;
+      const filter = audioCtx.createBiquadFilter();
+      filter.type = "bandpass";
+      filter.frequency.value = 2200;
+      filter.Q.value = 0.7;
+      const gain = audioCtx.createGain();
+      gain.gain.setValueAtTime(0.5, audioCtx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + dur);
+      noise.connect(filter).connect(gain).connect(audioCtx.destination);
+      noise.start();
+      noise.stop(audioCtx.currentTime + dur);
+    } catch (err) {
+      // 音效纯粹是锦上添花，合成失败（比如浏览器不支持）不影响翻页本身
+    }
+  }
 
   if (!bookId) {
     loadingTextEl.textContent = "找不到这本书";
@@ -70,9 +133,9 @@ async function runReader() {
   // 双页模式下每页只分到一半宽度，字被压小一倍。改成 "fixed" 模式 +
   // 自己按当前可视区域算一个单页宽高，能强制稳定单页显示，字大小也可控。
   // 这个尺寸也是重排模式排版时用来测量分页的依据，所以要在加载书之前先算好。
-  const stageRect = document.getElementById("readerStage").getBoundingClientRect();
-  const pageW = Math.max(320, Math.min(720, stageRect.width - 24));
-  const pageH = Math.max(420, stageRect.height - 16);
+  // 一开始就是沉浸模式，所以直接按沉浸模式的尺寸来，不用先按普通模式排一遍
+  // 版、工具栏一收起再重排一遍——那样开书瞬间会有一次跳动，而且白算一次。
+  const { w: pageW, h: pageH } = computeStageSize(immersive);
 
   let loader;
   try {
@@ -131,7 +194,7 @@ async function runReader() {
       disableFlipByClick: true,
     });
     pf.loadFromHTML(document.querySelectorAll("#flipbook .leaf"));
-    pf.on("flip", onFlip);
+    pf.on("flip", onFlipEvent);
     return pf;
   }
   let pageFlip = createPageFlip(pageW, pageH);
@@ -168,6 +231,12 @@ async function runReader() {
     renderAround(idx);
     saveProgress(idx);
   }
+  // 音效只应该在真的翻页手势/点击触发时响——onFlip 本身还会在打开书、
+  // 沉浸模式切换重建之后被手动调一次来同步 UI，那些时候不该有声音。
+  function onFlipEvent() {
+    playFlipSound();
+    onFlip();
+  }
 
   const startIndex = Math.min(book.lastPage || 0, numPages - 1);
   await renderAround(startIndex);
@@ -194,25 +263,11 @@ async function runReader() {
     pageFlip.turnToPage(idx);
   });
 
-  // 沉浸模式：点书页中间（不是点单词、不是点边缘翻页热区）收起上下工具栏，
-  // 让书本身尽量占满屏幕。分页是按固定像素尺寸提前排好的，工具栏一收起
-  // 可用区域变了，所以重排模式下必须真的用新尺寸重新分页——只是把工具栏
-  // 隐藏而书还是原来的大小，中间会空出一圈没用上的黑边，没有意义。
-  const readerAppEl = document.querySelector(".readerApp");
-  const readerStageEl = document.getElementById("readerStage");
-  let immersive = false;
-
-  function computeStageSize(isImmersive) {
-    const rect = readerStageEl.getBoundingClientRect();
-    const sidePad = isImmersive ? 6 : 24;
-    const topBotPad = isImmersive ? 6 : 16;
-    const maxW = isImmersive ? 960 : 720;
-    return {
-      w: Math.max(320, Math.min(maxW, rect.width - sidePad)),
-      h: Math.max(420, rect.height - topBotPad),
-    };
-  }
-
+  // 沉浸模式默认开着（前面已经用沉浸尺寸排过版了），双击书页中间（不是点
+  // 单词、不是点边缘翻页热区）在"工具栏收起"和"工具栏露出来"之间切换。
+  // 分页是按固定像素尺寸提前排好的，工具栏一露出/收起可用区域就变了，
+  // 所以重排模式下必须真的用新尺寸重新分页——只是切换工具栏显隐而书还是
+  // 原来的大小，没有意义。
   async function rebuildAtSize(w, h) {
     const ratio = numPages > 1 ? pageFlip.getCurrentPageIndex() / (numPages - 1) : 0;
     try {
@@ -255,7 +310,9 @@ async function runReader() {
     rebuildAtSize(w, h);
   }
 
-  document.addEventListener("click", (e) => {
+  // 用双击而不是单击——单击书页中间跟"点单词看释义"这类正常阅读动作
+  // 太容易混，双击才是个明确、不会跟别的手势冲突的"呼出/收起工具栏"信号。
+  document.addEventListener("dblclick", (e) => {
     if (
       e.target.closest(".btr-w") ||
       e.target.closest(".readerNav") ||
