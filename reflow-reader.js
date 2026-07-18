@@ -348,10 +348,14 @@ const ReflowReader = (() => {
     // canvas 量出来的文字宽度/换行数，跟浏览器实际排版渲染出来的还是会
     // 有细微出入（字体渲染引擎的取整方式不完全一致），单看一两行看不出
     // 来，一整页十几二十行累积起来就可能多算出一两行的空间。这里再加一层
-    // 明确的估算误差安全余量（跟上面扣 CSS padding 是两回事，不要合并），
-    // 用户反馈过一次：扣完 padding 之后书页底部文字还是被裁掉了一部分。
-    const ESTIMATE_SAFETY_MARGIN = 90;
-    const contentHeight = Math.max(100, height - 60 - ESTIMATE_SAFETY_MARGIN);
+    // 明确的估算误差安全余量（跟上面扣 CSS padding 是两回事，不要合并）。
+    // 第一版用的是固定 90px，结果用户反馈还是有裁字——回头一查才发现
+    // bug：固定像素值不会跟着字号缩放，字号调大之后 90px 换算成的行数
+    // 变少了，安全垫其实变薄了。改成按行数算（3 行），永远对应固定的
+    // 行数，不管用户把字号调到多大都一样保险。
+    const ESTIMATE_SAFETY_LINES = 3;
+    const estimateSafetyMargin = fontPx * 1.75 * ESTIMATE_SAFETY_LINES;
+    const contentHeight = Math.max(100, height - 60 - estimateSafetyMargin);
 
     const pages = [];
     let current = [];
