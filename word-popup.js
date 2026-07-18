@@ -4,20 +4,9 @@
 const WP_POPUP_ID = "btr-popup-host";
 let wpCloseOnOutsideHandler = null;
 
-// 临时排查用：记录弹窗生命周期事件，出问题时在控制台跑
-// copy(JSON.stringify(window.__wpDebugLog)) 把日志复制出来。
-window.__wpDebugLog = window.__wpDebugLog || [];
-function wpDebug(event, detail) {
-  window.__wpDebugLog.push({ t: Date.now(), event, detail });
-  console.log("[wp]", event, detail);
-}
-
 function wpRemovePopup() {
   const old = document.getElementById(WP_POPUP_ID);
-  if (old) {
-    wpDebug("removePopup", { hadBox: true, stack: new Error().stack });
-    old.remove();
-  }
+  if (old) old.remove();
   // 每次开新弹窗都会注册一个新的 closeOnOutside 监听；如果旧弹窗是被
   // wpCreatePopup 直接顶替掉的（不是靠点击外部关掉的），旧监听不会
   // 自己清掉——它还留在 document 上，闭包里存的还是那个已经被删除的
@@ -41,36 +30,6 @@ function wpCreatePopup(x, y) {
   box.id = WP_POPUP_ID;
   box.className = "wordPopup";
   document.body.appendChild(box);
-
-  // 临时排查用：不管是谁（我自己的代码还是别的脚本）把这个弹窗从
-  // 页面上摘掉，都在摘掉的那一刻打印真实调用栈——比事后猜"是不是被
-  // 我自己的逻辑删掉了"准得多。
-  const originalRemove = box.remove.bind(box);
-  box.remove = function () {
-    wpDebug("box.remove() called", { stack: new Error().stack });
-    return originalRemove();
-  };
-  if (!window.__wpRemoveChildPatched) {
-    window.__wpRemoveChildPatched = true;
-    const originalRemoveChild = Node.prototype.removeChild;
-    Node.prototype.removeChild = function (child) {
-      if (child && child.id === WP_POPUP_ID) {
-        wpDebug("removeChild() called on popup", { stack: new Error().stack });
-      }
-      return originalRemoveChild.call(this, child);
-    };
-  }
-  new MutationObserver((mutations) => {
-    for (const m of mutations) {
-      for (const removed of m.removedNodes) {
-        if (removed === box) {
-          wpDebug("MutationObserver saw box removed from body", {
-            stack: new Error().stack,
-          });
-        }
-      }
-    }
-  }).observe(document.body, { childList: true });
 
   // 弹出弹窗这个动作本身通常就是一次长按/点击手势的收尾——手势过程中
   // 正文里可能顺手残留了一点原生文字选区。留着不清掉的话，后面在弹窗
@@ -96,8 +55,6 @@ function wpCreatePopup(x, y) {
   // pointerdown 对不上（两套事件体系各自独立触发、各自做命中测试），
   // 统一成同一套事件更不容易出现"明明点在弹窗里，判断却说点在外面"
   // 导致弹窗刚拖了一下/刚点了收藏按钮就被自己关掉的问题。
-  const popupInstanceId = Date.now() + "-" + Math.random().toString(36).slice(2, 7);
-  wpDebug("createPopup", { popupInstanceId, x, y });
   const closeOnOutside = (e) => {
     const contains = box.contains(e.target);
     // 光靠 e.target 是不是弹窗的后代不够可靠——同一个页面里还有翻页库
@@ -112,18 +69,6 @@ function wpCreatePopup(x, y) {
       e.clientX <= rect.right &&
       e.clientY >= rect.top &&
       e.clientY <= rect.bottom;
-    wpDebug("closeOnOutside fired", {
-      popupInstanceId,
-      contains,
-      insideByCoords,
-      targetTag: e.target && e.target.tagName,
-      targetId: e.target && e.target.id,
-      targetClass: e.target && e.target.className,
-      clientX: e.clientX,
-      clientY: e.clientY,
-      rect: { left: rect.left, top: rect.top, right: rect.right, bottom: rect.bottom },
-      boxStillInDom: document.body.contains(box),
-    });
     if (!contains && !insideByCoords) {
       wpRemovePopup();
     }
@@ -156,12 +101,6 @@ function wpCreatePopup(x, y) {
   let dragging = false, dragOffsetX = 0, dragOffsetY = 0;
   box.addEventListener("pointerdown", (e) => {
     e.stopPropagation();
-    wpDebug("box own pointerdown", {
-      popupInstanceId,
-      targetTag: e.target && e.target.tagName,
-      targetClass: e.target && e.target.className,
-      isInteractive: !!e.target.closest("button, select, input, a"),
-    });
     if (e.target.closest("button, select, input, a")) return;
     dragging = true;
     const rect = box.getBoundingClientRect();
@@ -292,7 +231,6 @@ async function wpRenderWordDetail(box, data) {
   }
 
   saveBtn.addEventListener("click", async () => {
-    wpDebug("saveBtn click handler fired", { disabled: saveBtn.disabled, stillInDom: document.body.contains(saveBtn) });
     if (saveBtn.disabled) return;
     saveBtn.disabled = true;
     saveBtn.textContent = "☆ 收藏中…";
