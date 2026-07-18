@@ -89,7 +89,8 @@ body {
    由这里固定控制，跟原 PDF 排的字号大小完全无关，保证任何书都能看清楚。 */
 .reflowPage {
   height: 100%; box-sizing: border-box; overflow: hidden; padding: 30px 22px;
-  font-size: 22px; line-height: 1.75; font-family: Georgia, "Songti SC", "PingFang SC", serif;
+  font-size: var(--reflow-font-size, 21px); line-height: 1.75;
+  font-family: Georgia, "Songti SC", "PingFang SC", serif;
   color: #262b36;
 }
 .reflowPage > * { max-width: 640px; margin-left: auto; margin-right: auto; }
@@ -98,17 +99,35 @@ body {
 .reflowPage .btr-w { cursor: pointer; }
 .reflowPage .btr-w.translated { color: #2f6bff; font-weight: 600; border-bottom: 1px dotted rgba(47,107,255,0.5); }
 
-.readerTopBar .modeToggleBtn {
+/* 全大写的标语/口号（1984 里"BIG BROTHER IS WATCHING YOU"这类）单独
+   给个跟正文不一样的处理——加宽字距、暗红色，像海报上印刷体的感觉，
+   读到这种句子时能有一点区别于普通叙述文字的视觉停顿。 */
+.btr-slogan {
+  background: transparent; color: #8a2418; font-weight: 700; letter-spacing: 0.06em;
+}
+.btr-slogan::after { content: ""; }
+.btr-slogan.btr-slogan-eye::after { content: " \1F441"; font-weight: 400; letter-spacing: 0; }
+
+/* 目录里的章节条目：点了直接跳到那一章，不需要经过单词查询逻辑，所以
+   reflow-reader.js 生成的时候就没给它包 .btr-w，是整段可点的。 */
+.reflowPage .btr-toc-link { cursor: pointer; text-indent: 0; color: #3952d9; }
+.reflowPage .btr-toc-link:hover { text-decoration: underline; }
+
+.readerTopBar .modeToggleBtn,
+.readerTopBar .layoutToggleBtn {
   border: none; background: rgba(255,255,255,0.1); color: #ede1c8; height: 28px; padding: 0 10px; border-radius: 14px;
-  font-size: 12px; cursor: pointer; flex-shrink: 0;
+  font-size: 12px; cursor: pointer; flex-shrink: 0; white-space: nowrap;
 }
-.readerTopBar .modeToggleBtn:hover { background: rgba(255,255,255,0.18); }
-.readerTopBar .soundToggleBtn {
-  border: none; background: rgba(255,255,255,0.1); color: #ede1c8; width: 28px; height: 28px; border-radius: 50%;
-  font-size: 13px; cursor: pointer; flex-shrink: 0;
+.readerTopBar .modeToggleBtn:hover,
+.readerTopBar .layoutToggleBtn:hover { background: rgba(255,255,255,0.18); }
+.fontSizeCtl { display: flex; gap: 2px; flex-shrink: 0; }
+.fontSizeCtl button {
+  border: none; background: rgba(255,255,255,0.1); color: #ede1c8; width: 26px; height: 28px;
+  font-size: 12px; font-weight: 700; cursor: pointer;
 }
-.readerTopBar .soundToggleBtn:hover { background: rgba(255,255,255,0.18); }
-.readerTopBar .soundToggleBtn.muted { opacity: 0.5; }
+.fontSizeCtl button:first-child { border-radius: 14px 0 0 14px; }
+.fontSizeCtl button:last-child { border-radius: 0 14px 14px 0; }
+.fontSizeCtl button:hover { background: rgba(255,255,255,0.18); }
 
 .readerNav {
   position: absolute; top: 0; bottom: 0; width: 15%; display: flex; align-items: center;
@@ -134,7 +153,12 @@ body {
 .readerBottomBar button:active { transform: scale(0.92); }
 .readerBottomBar button:disabled { opacity: 0.35; cursor: default; }
 .readerBottomBar input[type=range] { flex: 1; max-width: 420px; accent-color: #c9a15f; }
-.readerPageNum { font-size: 12px; color: #baa584; letter-spacing: 0.3px; min-width: 60px; text-align: center; }
+.readerPageNum { font-size: 12px; color: #baa584; letter-spacing: 0.3px; text-align: center; }
+.readerPageNum input {
+  width: 3.5em; font: inherit; color: #ede1c8; background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.15);
+  border-radius: 4px; text-align: right; padding: 1px 3px;
+}
+.readerPageNum input::-webkit-outer-spin-button, .readerPageNum input::-webkit-inner-spin-button { margin: 0; }
 
 /* 词语浮窗（跟浏览器扩展 ui.js 的设计一致） */
 .wordPopup {

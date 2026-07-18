@@ -25,14 +25,17 @@ async function runReader() {
   const bookId = Number(params.get("id"));
 
   const titleEl = document.getElementById("readerTitle");
-  const pageNumEl = document.getElementById("readerPageNum");
   const loadingEl = document.getElementById("readerLoading");
   const loadingTextEl = document.getElementById("readerLoadingText");
   const flipbookEl = document.getElementById("flipbook");
   const bottomBar = document.getElementById("readerBottomBar");
   const slider = document.getElementById("pageSlider");
   const modeToggleBtn = document.getElementById("modeToggleBtn");
-  const soundToggleBtn = document.getElementById("soundToggleBtn");
+  const layoutToggleBtn = document.getElementById("layoutToggleBtn");
+  const fontSizeDown = document.getElementById("fontSizeDown");
+  const fontSizeUp = document.getElementById("fontSizeUp");
+  const pageInput = document.getElementById("readerPageInput");
+  const pageTotalEl = document.getElementById("readerPageTotal");
   const readerAppEl = document.querySelector(".readerApp");
   const readerStageEl = document.getElementById("readerStage");
 
@@ -45,59 +48,35 @@ async function runReader() {
   let immersive = true;
   readerAppEl.classList.add("immersive");
 
-  function computeStageSize(isImmersive) {
+  // 单页 / 双页（跨页对开，像本摊开的书）留给读者自己选，不自动猜——
+  // 双页时每页只分到大约一半宽度，pageFlip 库会不会真的排成两页并排
+  // 取决于容器宽度够不够放下 2 倍页宽，宽度算法在这里直接照顾到。
+  const layoutKey = "btr-page-layout";
+  let spreadMode = localStorage.getItem(layoutKey) === "spread";
+  function updateLayoutBtn() {
+    layoutToggleBtn.textContent = spreadMode ? "⧉ 双页" : "▯ 单页";
+    layoutToggleBtn.title = spreadMode ? "切换到单页" : "切换到双页";
+  }
+  updateLayoutBtn();
+
+  // 字号读者自己调，21px 起步，跟 --reflow-font-size 这个 CSS 变量联动——
+  // reflow-reader.js 排版时量的是实际渲染出来的高度，字号一变必须重新
+  // 分页，不然要么留白很多要么最后一行被裁掉。
+  const fontSizeKey = "btr-font-size";
+  let fontSize = Number(localStorage.getItem(fontSizeKey)) || 21;
+  document.documentElement.style.setProperty("--reflow-font-size", fontSize + "px");
+
+  function computeStageSize(isImmersive, isSpread) {
     const rect = readerStageEl.getBoundingClientRect();
     const sidePad = isImmersive ? 6 : 24;
     const topBotPad = isImmersive ? 6 : 16;
-    const maxW = isImmersive ? 960 : 720;
-    return {
-      w: Math.max(320, Math.min(maxW, rect.width - sidePad)),
-      h: Math.max(420, rect.height - topBotPad),
-    };
-  }
-
-  // 翻页音效：不打包一个真实的翻书录音文件——纯前端静态站没有构建流程，
-  // 塞一个二进制音频文件进仓库还要操心版权来源，不如用 Web Audio 现场
-  // 合成一段短促的"唰"声（滤波白噪声 + 快速衰减），够用且零依赖。
-  const soundKey = "btr-flip-sound";
-  let soundOn = localStorage.getItem(soundKey) !== "0";
-  let audioCtx = null;
-  function updateSoundBtn() {
-    soundToggleBtn.textContent = soundOn ? "🔊" : "🔇";
-    soundToggleBtn.classList.toggle("muted", !soundOn);
-    soundToggleBtn.title = soundOn ? "关闭翻页音效" : "开启翻页音效";
-  }
-  updateSoundBtn();
-  soundToggleBtn.addEventListener("click", () => {
-    soundOn = !soundOn;
-    localStorage.setItem(soundKey, soundOn ? "1" : "0");
-    updateSoundBtn();
-  });
-  function playFlipSound() {
-    if (!soundOn) return;
-    try {
-      audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
-      const dur = 0.22;
-      const buffer = audioCtx.createBuffer(1, audioCtx.sampleRate * dur, audioCtx.sampleRate);
-      const data = buffer.getChannelData(0);
-      for (let i = 0; i < data.length; i++) {
-        data[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / data.length, 2);
-      }
-      const noise = audioCtx.createBufferSource();
-      noise.buffer = buffer;
-      const filter = audioCtx.createBiquadFilter();
-      filter.type = "bandpass";
-      filter.frequency.value = 2200;
-      filter.Q.value = 0.7;
-      const gain = audioCtx.createGain();
-      gain.gain.setValueAtTime(0.5, audioCtx.currentTime);
-      gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + dur);
-      noise.connect(filter).connect(gain).connect(audioCtx.destination);
-      noise.start();
-      noise.stop(audioCtx.currentTime + dur);
-    } catch (err) {
-      // 音效纯粹是锦上添花，合成失败（比如浏览器不支持）不影响翻页本身
+    const availW = rect.width - sidePad;
+    const availH = Math.max(420, rect.height - topBotPad);
+    if (isSpread) {
+      return { w: Math.max(280, Math.min(620, availW / 2 - 6)), h: availH };
     }
+    const maxW = isImmersive ? 960 : 720;
+    return { w: Math.max(320, Math.min(maxW, availW)), h: availH };
   }
 
   if (!bookId) {
@@ -135,7 +114,13 @@ async function runReader() {
   // 这个尺寸也是重排模式排版时用来测量分页的依据，所以要在加载书之前先算好。
   // 一开始就是沉浸模式，所以直接按沉浸模式的尺寸来，不用先按普通模式排一遍
   // 版、工具栏一收起再重排一遍——那样开书瞬间会有一次跳动，而且白算一次。
-  const { w: pageW, h: pageH } = computeStageSize(immersive);
+  let curW, curH;
+  {
+    const sz = computeStageSize(immersive, spreadMode);
+    curW = sz.w;
+    curH = sz.h;
+  }
+  const pageW = curW, pageH = curH;
 
   let loader;
   try {
@@ -194,7 +179,7 @@ async function runReader() {
       disableFlipByClick: true,
     });
     pf.loadFromHTML(document.querySelectorAll("#flipbook .leaf"));
-    pf.on("flip", onFlipEvent);
+    pf.on("flip", onFlip);
     return pf;
   }
   let pageFlip = createPageFlip(pageW, pageH);
@@ -221,7 +206,8 @@ async function runReader() {
   }
 
   function updatePageNum(idx) {
-    pageNumEl.textContent = `${idx + 1} / ${numPages}`;
+    pageInput.value = idx + 1;
+    pageTotalEl.textContent = "/ " + numPages;
     slider.value = idx;
   }
 
@@ -230,12 +216,6 @@ async function runReader() {
     updatePageNum(idx);
     renderAround(idx);
     saveProgress(idx);
-  }
-  // 音效只应该在真的翻页手势/点击触发时响——onFlip 本身还会在打开书、
-  // 沉浸模式切换重建之后被手动调一次来同步 UI，那些时候不该有声音。
-  function onFlipEvent() {
-    playFlipSound();
-    onFlip();
   }
 
   const startIndex = Math.min(book.lastPage || 0, numPages - 1);
@@ -259,9 +239,30 @@ async function runReader() {
   document.getElementById("navNext").addEventListener("click", goNext);
   slider.addEventListener("input", () => {
     const idx = Number(slider.value);
-    pageNumEl.textContent = `${idx + 1} / ${numPages}`;
+    pageInput.value = idx + 1;
     pageFlip.turnToPage(idx);
   });
+
+  // 页码输入框：打字输一个页码回车/失焦直接跳过去，不用一路拖滑块
+  function jumpToTypedPage() {
+    const n = Math.round(Number(pageInput.value));
+    if (!Number.isFinite(n)) {
+      pageInput.value = pageFlip.getCurrentPageIndex() + 1;
+      return;
+    }
+    const idx = Math.min(numPages - 1, Math.max(0, n - 1));
+    updatePageNum(idx);
+    pageFlip.turnToPage(idx);
+  }
+  pageInput.addEventListener("change", jumpToTypedPage);
+  pageInput.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      jumpToTypedPage();
+      pageInput.blur();
+    }
+  });
+  pageInput.addEventListener("click", (e) => e.stopPropagation());
 
   // 沉浸模式默认开着（前面已经用沉浸尺寸排过版了），双击书页中间（不是点
   // 单词、不是点边缘翻页热区）在"工具栏收起"和"工具栏露出来"之间切换。
@@ -295,6 +296,8 @@ async function runReader() {
       await renderAround(idx);
       if (idx > 0) pageFlip.turnToPage(idx);
       onFlip();
+      curW = w;
+      curH = h;
     } catch (err) {
       showToast("切换显示模式失败：" + err.message);
     }
@@ -306,9 +309,27 @@ async function runReader() {
     // 之前用 requestAnimationFrame 包了一层等下一帧再量尺寸，其实没必要——
     // class 切换是同步的，紧接着调用 getBoundingClientRect 会强制浏览器
     // 立刻把布局算好再返回，不用等额外一帧。
-    const { w, h } = computeStageSize(on);
+    const { w, h } = computeStageSize(on, spreadMode);
     rebuildAtSize(w, h);
   }
+
+  layoutToggleBtn.addEventListener("click", () => {
+    spreadMode = !spreadMode;
+    localStorage.setItem(layoutKey, spreadMode ? "spread" : "single");
+    updateLayoutBtn();
+    const { w, h } = computeStageSize(immersive, spreadMode);
+    rebuildAtSize(w, h);
+  });
+
+  function changeFontSize(delta) {
+    fontSize = Math.max(15, Math.min(30, fontSize + delta));
+    localStorage.setItem(fontSizeKey, String(fontSize));
+    document.documentElement.style.setProperty("--reflow-font-size", fontSize + "px");
+    // 字号变了不影响页面尺寸（w/h 不变），但每页能放的字变了，必须重新分页
+    rebuildAtSize(curW, curH);
+  }
+  fontSizeDown.addEventListener("click", () => changeFontSize(-1));
+  fontSizeUp.addEventListener("click", () => changeFontSize(1));
 
   // 用双击而不是单击——单击书页中间跟"点单词看释义"这类正常阅读动作
   // 太容易混，双击才是个明确、不会跟别的手势冲突的"呼出/收起工具栏"信号。
@@ -319,6 +340,7 @@ async function runReader() {
       e.target.closest(".readerTopBar") ||
       e.target.closest(".readerBottomBar") ||
       e.target.closest(".wordPopup") ||
+      e.target.closest(".btr-toc-link") ||
       !e.target.closest(".leaf")
     ) {
       return;
@@ -326,5 +348,14 @@ async function runReader() {
     const sel = window.getSelection();
     if (sel && sel.toString().trim()) return;
     setImmersive(!immersive);
+  });
+
+  // 目录页里的章节条目：点了直接跳到那一章开头
+  document.addEventListener("click", (e) => {
+    const link = e.target.closest(".btr-toc-link");
+    if (!link || !link.dataset.gotoPage) return;
+    const idx = Math.min(numPages - 1, Math.max(0, Number(link.dataset.gotoPage) - 1));
+    pageFlip.turnToPage(idx);
+    onFlip();
   });
 }
