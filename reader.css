@@ -76,7 +76,7 @@ body {
    由这里固定控制，跟原 PDF 排的字号大小完全无关，保证任何书都能看清楚。 */
 .reflowPage {
   height: 100%; box-sizing: border-box; overflow: hidden; padding: 30px 22px;
-  font-size: 19px; line-height: 1.75; font-family: Georgia, "Songti SC", "PingFang SC", serif;
+  font-size: 22px; line-height: 1.75; font-family: Georgia, "Songti SC", "PingFang SC", serif;
   color: #262b36;
 }
 .reflowPage > * { max-width: 640px; margin-left: auto; margin-right: auto; }
