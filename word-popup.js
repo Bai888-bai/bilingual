@@ -99,7 +99,23 @@ function wpCreatePopup(x, y) {
     }
   };
   wpCloseOnOutsideHandler = closeOnOutside;
-  setTimeout(() => document.addEventListener("pointerdown", closeOnOutside, true), 0);
+  // 同步注册，不要用 setTimeout(0) 延迟注册——之前用 setTimeout 是想
+  // 避免"创建弹窗的这次点击自己把弹窗关掉"，但 closeOnOutside 监听的
+  // 是 pointerdown，而弹窗是在 mouseup（短按）或长按计时器回调里创建
+  // 的，早就跟这次点击的 pointerdown 不是同一个事件了，压根不需要
+  // 延迟这一手。延迟注册反而引入了一个真正的 bug：如果一个弹窗刚创建
+  // （这时候 wpCloseOnOutsideHandler 已经同步指向了新的 closeOnOutside，
+  // 但它的 addEventListener 还没真正跑），紧接着又有新弹窗把它顶替掉
+  // ——wpRemovePopup 这时候去 removeEventListener 一个根本还没注册上
+  // 的监听，等于是空操作，没起到任何清理作用。等两个 setTimeout(0) 都
+  // 真正跑起来的时候，旧的、该被清掉的 closeOnOutside 反而"迟到"注册
+  // 成功了，跟新弹窗的 closeOnOutside 同时生效——旧的那个内部存的
+  // box 早就被删除、不在文档里了，contains/坐标判断天然都是 false，
+  // 于是随便点一下（包括点在新弹窗身上）都会被旧监听误判成"点在外
+  // 面"，把新弹窗删掉。这正是这次用户复现日志里看到的现象：目标元素
+  // 明明就是 #btr-popup-host，但对应的 box 已经不在文档里、rect 全是
+  // 0。改成同步注册，从根上不给这种"迟到注册"的竞态条件留出现的空间。
+  document.addEventListener("pointerdown", closeOnOutside, true);
 
   // 阅读器里的翻页库自己也全局监听 mousedown/pointerdown 来做"按住拖拽
   // 翻页"（word-interact.js 处理点单词时就因为同样的原因加了
