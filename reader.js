@@ -137,24 +137,6 @@ async function runReader() {
   }
   const pageW = curW, pageH = curH;
 
-  // 临时排查用：把关键的视口/布局数字直接印在页面右上角，方便用户
-  // 截图给我看，不用再折腾控制台/剪贴板。确认底部裁字问题解决之后
-  // 把这一段删掉。
-  (function renderDebugOverlay() {
-    const el = document.createElement("div");
-    el.id = "btrDebugOverlay";
-    el.style.cssText =
-      "position:fixed;top:0;right:0;z-index:9999999;background:rgba(255,0,0,0.85);color:#fff;" +
-      "font:11px/1.4 monospace;padding:4px 6px;white-space:pre;pointer-events:none;";
-    const stageRect = readerStageEl.getBoundingClientRect();
-    el.textContent =
-      `innerH=${window.innerHeight} innerW=${window.innerWidth}\n` +
-      `stageRect.bottom=${Math.round(stageRect.bottom)} stageRect.height=${Math.round(stageRect.height)}\n` +
-      `pageH(computed)=${Math.round(pageH)} screenAvailH=${screen.availHeight} screenH=${screen.height}\n` +
-      `dpr=${window.devicePixelRatio} fullscreen=${!!document.fullscreenElement}`;
-    document.body.appendChild(el);
-  })();
-
   let loader;
   try {
     if (book.type === "pdf") {

@@ -300,7 +300,13 @@ const ReflowReader = (() => {
   // 降低"这一整块被判定为能装下、结果实际装不下"的概率——这类判断
   // 错误不是"这页多留白一点"这种可以接受的小误差，是真的会把装不下
   // 的那部分内容直接弄丢（见 paginateBlocks 里的详细说明）。
-  const ESTIMATE_INFLATION = 1.15;
+  // 这个系数一开始给到 1.15，是在还没找到两个真正丢字的结构性 bug
+  // （见 paginateBlocks 循环顺序、splitLongBlock 缺首行缩进那两处）
+  // 之前，出于"不确定误差多大，先往大了留"的心态定的。那两个结构性
+  // bug 修好之后，剩下的就是原作者一开始就预期的那种正常范围内的
+  // canvas 估算噪声（"最坏情况裁掉半行"），不需要这么大的余量——
+  // 调小一点，减少每页浪费的空白。
+  const ESTIMATE_INFLATION = 1.05;
   function estimateHeight(ctx, block, contentWidth, fontPx) {
     if (block.link) {
       ctx.font = `400 ${fontPx}px ${FONT_FAMILY}`;
@@ -369,9 +375,12 @@ const ReflowReader = (() => {
     // 明确的估算误差安全余量（跟上面扣 CSS padding 是两回事，不要合并）。
     // 第一版用的是固定 90px，结果用户反馈还是有裁字——回头一查才发现
     // bug：固定像素值不会跟着字号缩放，字号调大之后 90px 换算成的行数
-    // 变少了，安全垫其实变薄了。改成按行数算（3 行），永远对应固定的
-    // 行数，不管用户把字号调到多大都一样保险。
-    const ESTIMATE_SAFETY_LINES = 3;
+    // 变少了，安全垫其实变薄了。改成按行数算，永远对应固定的行数，
+    // 不管用户把字号调到多大都一样保险。当时定 3 行是因为还没找到
+    // paginateBlocks 循环顺序那个真正丢字的结构性 bug，留得比较保守；
+    // 那个 bug 修好之后这里可以收紧一点，减少每页浪费的空白——保留
+    // 1 行，对应原作者最初设想的"最坏情况裁掉半行"这种正常估算噪声。
+    const ESTIMATE_SAFETY_LINES = 1;
     const estimateSafetyMargin = fontPx * 1.75 * ESTIMATE_SAFETY_LINES;
     const contentHeight = Math.max(100, height - 60 - estimateSafetyMargin);
 
