@@ -294,6 +294,13 @@ const ReflowReader = (() => {
   }
   // 跟 .reflowPage 的 CSS 对齐：line-height:1.75，标题 font-size:1.3em，
   // p 的 text-indent:1.6em / margin-bottom:1em，标题 margin 加起来约 1.3em。
+  // canvas 估算的行数跟浏览器真实换行之间的误差，段落越长越容易累积
+  // 得比较明显（标点/连字符/引号这类字符的取整方式两边不完全一致）。
+  // 给估算结果整体乘一个安全系数：段落越长，绝对的冗余空间也跟着越大，
+  // 降低"这一整块被判定为能装下、结果实际装不下"的概率——这类判断
+  // 错误不是"这页多留白一点"这种可以接受的小误差，是真的会把装不下
+  // 的那部分内容直接弄丢（见 paginateBlocks 里的详细说明）。
+  const ESTIMATE_INFLATION = 1.15;
   function estimateHeight(ctx, block, contentWidth, fontPx) {
     if (block.link) {
       ctx.font = `400 ${fontPx}px ${FONT_FAMILY}`;
@@ -303,19 +310,27 @@ const ReflowReader = (() => {
       const hPx = fontPx * 1.3;
       ctx.font = `700 ${hPx}px ${FONT_FAMILY}`;
       const lines = wrapLineCount(ctx, block.text, contentWidth, 0);
-      return lines * hPx * 1.4 + hPx * 1.3;
+      return (lines * hPx * 1.4 + hPx * 1.3) * ESTIMATE_INFLATION;
     }
     ctx.font = `400 ${fontPx}px ${FONT_FAMILY}`;
     const indent = fontPx * 1.6;
     const lines = wrapLineCount(ctx, block.text, contentWidth, indent);
-    return lines * fontPx * 1.75 + fontPx;
+    return (lines * fontPx * 1.75 + fontPx) * ESTIMATE_INFLATION;
   }
   function splitLongBlock(ctx, block, contentWidth, fontPx, height, pages) {
     const isHeading = block.type === "h";
     const fPx = isHeading ? fontPx * 1.3 : fontPx;
     ctx.font = `${isHeading ? 700 : 400} ${fPx}px ${FONT_FAMILY}`;
     const lh = isHeading ? fPx * 1.4 : fontPx * 1.75;
-    const maxLines = Math.max(1, Math.floor(height / lh));
+    // 这里按单词贪心拼行，没有像 estimateHeight/wrapLineCount 那样在第一行
+    // 留出 text-indent 的缩进空间——首行能多塞下几个词，会把后面所有换行
+    // 的位置都往后错开一点，实测一段十几行的文字这样能少算出整整一行。
+    // 结果就是这里切出来的每一块，拿 estimateHeight 回头一验算，会比
+    // 传进来的 height 还高——这正是用户反馈"一整句话在两页之间彻底消失"
+    // 的那个 bug 的另一半根源：这个函数本该保证切出来的每一块绝对不会
+    // 超出可用高度，实际却因为跟另一个计算函数的口径不一致而没保证住。
+    // maxLines 在此基础上再保守减一行，专门吸收这个已知的口径差。
+    const maxLines = Math.max(1, Math.floor(height / lh) - 1);
     const spaceW = ctx.measureText(" ").width;
     const words = block.text.split(/\s+/).filter(Boolean);
     let idx = 0;
@@ -372,14 +387,27 @@ const ReflowReader = (() => {
         currentHeight = 0;
       }
       const h = estimateHeight(ctx, block, contentWidth, fontPx);
-      if (current.length === 0 && h > contentHeight) {
-        splitLongBlock(ctx, block, contentWidth, fontPx, contentHeight, pages);
-        continue;
-      }
+      // 真正丢字的 bug 在这两步的顺序上：以前是先判断"这块要不要拆开"
+      // （只在 current.length === 0 时才检查），再判断"这块加进来会不会
+      // 超"。如果这块文字本身超长（h > contentHeight），但它不是恰好
+      // 排到空页面开头（前面已经攒了别的内容），第一个判断会被跳过；
+      // 紧接着第二个判断把当前页推走腾出空页，但这块超长的内容已经走完
+      // "要不要拆"这一步了，不会回头重新检查——于是整段被当成一个不可
+      // 分割的单元直接塞进新页，超出可视高度的尾巴部分被
+      // .reflowPage 的 overflow:hidden 吃掉，不会流到下一页，是真的从
+      // 书里消失了，不是"多留白"这种可以接受的小误差。用户拿原文
+      // 逐字对比找出来的就是这个问题：一整句话在两页之间完全找不到。
+      // 改成先处理"腾页面"，再检查"这块是不是超长"，确保任何一块超长
+      // 内容不管是排在空页开头、还是把前面内容挤走腾出的新页开头，都
+      // 会被正确送进 splitLongBlock 按行拆分，不会被整体囫囵吞下。
       if (current.length > 0 && currentHeight + h > contentHeight) {
         pages.push(current);
         current = [];
         currentHeight = 0;
+      }
+      if (current.length === 0 && h > contentHeight) {
+        splitLongBlock(ctx, block, contentWidth, fontPx, contentHeight, pages);
+        continue;
       }
       current.push(block);
       currentHeight += h;
