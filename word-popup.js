@@ -43,8 +43,15 @@ function wpCreatePopup(x, y) {
   };
   setTimeout(() => document.addEventListener("pointerdown", closeOnOutside, true), 0);
 
+  // 阅读器里的翻页库自己也全局监听 mousedown/pointerdown 来做"按住拖拽
+  // 翻页"（word-interact.js 处理点单词时就因为同样的原因加了
+  // stopPropagation，见那边的注释）。这个弹窗自己的拖拽/点击不stop
+  // Propagation 的话，事件会一路冒泡到翻页库那层，被它当成翻页手势，
+  // 弹窗的拖拽和里面按钮的点击都会被抢跑——只在普通网页/生词本页面
+  // （没有翻页库）不会有这个问题，所以这个 bug 只在书籍阅读页面里出现。
   let dragging = false, dragOffsetX = 0, dragOffsetY = 0;
   box.addEventListener("pointerdown", (e) => {
+    e.stopPropagation();
     if (e.target.closest("button, select, input, a")) return;
     dragging = true;
     const rect = box.getBoundingClientRect();
@@ -55,11 +62,16 @@ function wpCreatePopup(x, y) {
   });
   box.addEventListener("pointermove", (e) => {
     if (!dragging) return;
+    e.stopPropagation();
     const rect = box.getBoundingClientRect();
     box.style.left = Math.max(4, Math.min(e.clientX - dragOffsetX, window.innerWidth - rect.width - 4)) + "px";
     box.style.top = Math.max(4, Math.min(e.clientY - dragOffsetY, window.innerHeight - rect.height - 4)) + "px";
   });
-  box.addEventListener("pointerup", () => { dragging = false; box.classList.remove("dragging"); });
+  box.addEventListener("pointerup", (e) => {
+    e.stopPropagation();
+    dragging = false;
+    box.classList.remove("dragging");
+  });
 
   return box;
 }
