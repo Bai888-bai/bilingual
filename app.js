@@ -187,7 +187,6 @@ async function renderLibrary() {
         : `background:${colorForTitle(b.title)}`;
       return `
       <div class="bookSpine ${b.coverBlob ? "hasCover" : ""}" data-id="${b.id}" style="${bgStyle}">
-        <span class="spineType">${b.type === "pdf" ? "PDF" : "EPUB"}</span>
         <button class="bookCoverBtn" data-id="${b.id}" title="${b.coverBlob ? "更换封面" : "设置封面"}">🖼</button>
         <button class="bookDeleteBtn" data-id="${b.id}" title="删除">✕</button>
         <div class="spineLabel" data-id="${b.id}">

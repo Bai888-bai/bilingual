@@ -141,12 +141,6 @@ main#pages { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; }
 .spineLabel .spineLabelText[contenteditable="true"] {
   -webkit-line-clamp: unset; background: #fff; box-shadow: 0 0 0 2px var(--primary);
 }
-.spineType {
-  position: absolute; top: 3px; left: 50%; transform: translateX(-50%);
-  font-size: 7px; font-weight: 700; letter-spacing: 0.5px; color: rgba(255,255,255,0.85);
-  background: rgba(0,0,0,0.3); padding: 1px 5px; border-radius: 3px;
-}
-
 /* 换封面/删除两个按钮以前挤在窄窄的书脊两个角上，58px 宽根本放不下还
    留间距，很容易点错。分开挪到书脊两侧偏上的位置，删除按钮换成红色，
    一眼就能跟"换封面"区分开，误触了也不至于手滑删错书。 */
