@@ -125,10 +125,12 @@ const ReflowReader = (() => {
     heights.sort((a, b) => a - b);
     const medianH = heights.length ? heights[Math.floor(heights.length / 2)] : 10;
 
-    // 正文续行的起始 x 的众数——这本书是左对齐排版（ragged right），几乎
-    // 每行结尾都参差不齐，"这行有没有撑满右边距" 这个信号完全不可靠；
-    // 真正可靠的段落标志是"这行起始位置比正常续行多缩进一截"（首行缩进）
-    // 或者"跟上一行的垂直间距明显比正常行距大"（空了一行）。
+    // 正文续行起始 x 的"最左边那个常见值"——这本书是左对齐排版（ragged
+    // right），几乎每行结尾都参差不齐，"这行有没有撑满右边距" 这个信号
+    // 完全不可靠。用出现次数 >=3 次里最靠左的 x 当作"续行/不缩进"的基准线
+    // （而不是直接取众数——如果这段文字里短段落、对话比较多，首行缩进的
+    // 行反而可能比真正的续行还多，众数会选错，取"最左"更稳，因为缩进
+    // 只会比基准线更靠右，不会更靠左）。
     const x0Counts = new Map();
     for (const pg of pagesLines) {
       for (const ln of pg.lines) {
@@ -137,10 +139,30 @@ const ReflowReader = (() => {
         x0Counts.set(key, (x0Counts.get(key) || 0) + 1);
       }
     }
-    let modalX0 = 0, modalCount = -1;
+    let modalX0 = Infinity;
     for (const [x0, count] of x0Counts) {
-      if (count > modalCount) { modalCount = count; modalX0 = x0; }
+      if (count >= 3 && x0 < modalX0) modalX0 = x0;
     }
+    if (modalX0 === Infinity) modalX0 = 0;
+
+    // 正常行与行之间的基线间距，从数据里实际量出来，不能凭感觉假设——
+    // PDF 排版实际的行距经常只有约 1.15~1.3 倍字号，如果拿一个瞎猜的倍数
+    // 当"正常间距"，"是不是异常大间距（说明空了一行=新段落）"这个判断
+    // 永远不会触发，所有段落分隔全靠首行缩进撑着。
+    const bodyGaps = [];
+    for (const pg of pagesLines) {
+      let py = null, pfh = null;
+      for (const ln of pg.lines) {
+        const t = ln.text.trim();
+        const isBody = t.length > 2 && !/^[\divxlc]{1,4}$/i.test(t) && ln.fontHeight <= medianH * 1.22;
+        if (isBody && py != null && pfh != null && Math.abs(ln.fontHeight - pfh) < pfh * 0.15) {
+          bodyGaps.push(py - ln.y);
+        }
+        if (isBody) { py = ln.y; pfh = ln.fontHeight; } else { py = null; pfh = null; }
+      }
+    }
+    bodyGaps.sort((a, b) => a - b);
+    const normalGap = bodyGaps.length ? bodyGaps[Math.floor(bodyGaps.length / 2)] : medianH * 1.3;
 
     const blocks = [];
     let currentPara = null;
@@ -166,10 +188,9 @@ const ReflowReader = (() => {
           continue;
         }
 
-        const expectedGap = (prevFontHeight || ln.fontHeight) * 1.6;
         const yGap = prevY == null ? 0 : prevY - ln.y;
-        const isIndented = ln.x0 > modalX0 + ln.fontHeight * 0.8;
-        const isBigGap = prevY != null && yGap > expectedGap * 1.3;
+        const isIndented = ln.x0 > modalX0 + ln.fontHeight * 0.35;
+        const isBigGap = prevY != null && yGap > normalGap * 1.35;
         const startsNewPara = !currentPara || isIndented || isBigGap;
 
         if (startsNewPara) {
@@ -238,80 +259,131 @@ const ReflowReader = (() => {
     return el;
   }
 
-  // 在一个不可见的容器里实际把段落一个个塞进去、量高度，超出目标高度
-  // 就另起一页——这样每页放多少字，完全由字号/行高/容器尺寸决定，不是
-  // 按 PDF 原来的分页来的。单个段落长到一页都装不下时（很少见），按词
-  // 二分查找能塞进空页的最多词数，硬切开。
-  function paginateBlocks(blocks, width, height) {
-    const measurer = document.createElement("div");
-    measurer.className = "reflowPage";
-    Object.assign(measurer.style, {
-      position: "fixed", left: "-9999px", top: "0", visibility: "hidden",
-      width: width + "px", height: "auto", pointerEvents: "none",
-    });
-    document.body.appendChild(measurer);
+  // 用 canvas 的 measureText 估算每个块占几行、占多高，而不是每加一个块
+  // 就往真实 DOM 里插一次再读 scrollHeight——一本 900 多页的书有几千个
+  // 段落，每个都逼一次浏览器同步重排，加起来是几秒钟的卡顿（沉浸模式/
+  // 字号一切换就要重排一次，切一次卡一次）。canvas 量文字宽度不用碰
+  // DOM、不触发重排，几千个段落算下来也就几十毫秒。代价是估算比实际
+  // 渲染略粗略，个别页可能有一两行的误差——reflowPage 本身开了
+  // overflow:hidden 兜底，最坏情况也就是页尾巴多一点点空白或极少数
+  // 情况下裁掉半行，比几秒钟的卡顿好接受得多。
+  const FONT_FAMILY = 'Georgia, "Songti SC", "PingFang SC", serif';
+  function measureCtx() {
+    const canvas = document.createElement("canvas");
+    return canvas.getContext("2d");
+  }
+  function wrapLineCount(ctx, text, maxWidth, firstLineIndent) {
+    const words = text.split(/\s+/).filter(Boolean);
+    if (!words.length) return 1;
+    const spaceW = ctx.measureText(" ").width;
+    let lines = 1;
+    let lineW = firstLineIndent || 0;
+    for (const w of words) {
+      const wW = ctx.measureText(w).width;
+      if (lineW > 0 && lineW + spaceW + wW > maxWidth) {
+        lines++;
+        lineW = wW;
+      } else {
+        lineW += (lineW > 0 ? spaceW : 0) + wW;
+      }
+    }
+    return lines;
+  }
+  // 跟 .reflowPage 的 CSS 对齐：line-height:1.75，标题 font-size:1.3em，
+  // p 的 text-indent:1.6em / margin-bottom:1em，标题 margin 加起来约 1.3em。
+  function estimateHeight(ctx, block, contentWidth, fontPx) {
+    if (block.link) {
+      ctx.font = `400 ${fontPx}px ${FONT_FAMILY}`;
+      return fontPx * 1.75;
+    }
+    if (block.type === "h") {
+      const hPx = fontPx * 1.3;
+      ctx.font = `700 ${hPx}px ${FONT_FAMILY}`;
+      const lines = wrapLineCount(ctx, block.text, contentWidth, 0);
+      return lines * hPx * 1.4 + hPx * 1.3;
+    }
+    ctx.font = `400 ${fontPx}px ${FONT_FAMILY}`;
+    const indent = fontPx * 1.6;
+    const lines = wrapLineCount(ctx, block.text, contentWidth, indent);
+    return lines * fontPx * 1.75 + fontPx;
+  }
+  function splitLongBlock(ctx, block, contentWidth, fontPx, height, pages) {
+    const isHeading = block.type === "h";
+    const fPx = isHeading ? fontPx * 1.3 : fontPx;
+    ctx.font = `${isHeading ? 700 : 400} ${fPx}px ${FONT_FAMILY}`;
+    const lh = isHeading ? fPx * 1.4 : fontPx * 1.75;
+    const maxLines = Math.max(1, Math.floor(height / lh));
+    const spaceW = ctx.measureText(" ").width;
+    const words = block.text.split(/\s+/).filter(Boolean);
+    let idx = 0;
+    while (idx < words.length) {
+      let lineW = 0, lines = 1, count = 0;
+      while (idx + count < words.length) {
+        const wW = ctx.measureText(words[idx + count]).width;
+        if (lineW > 0 && lineW + spaceW + wW > contentWidth) {
+          if (lines + 1 > maxLines) break;
+          lines++;
+          lineW = wW;
+        } else {
+          lineW += (lineW > 0 ? spaceW : 0) + wW;
+        }
+        count++;
+      }
+      if (count === 0) count = 1; // 保底，避免一个词都放不下时死循环
+      pages.push([{ type: block.type, text: words.slice(idx, idx + count).join(" ") }]);
+      idx += count;
+    }
+  }
+
+  function paginateBlocks(blocks, width, height, fontPx) {
+    const ctx = measureCtx();
+    // 跟 .reflowPage 的 CSS 对齐：左右 padding 22px*2，内容区最宽 640px
+    const contentWidth = Math.max(120, Math.min(640, width - 44));
 
     const pages = [];
     let current = [];
-
-    function render() {
-      measurer.innerHTML = "";
-      for (const b of current) measurer.appendChild(makeBlockEl(b));
-    }
-    function fits() {
-      return measurer.scrollHeight <= height;
-    }
-    function splitLongBlock(block) {
-      const words = block.text.split(/\s+/);
-      let idx = 0;
-      while (idx < words.length) {
-        let lo = 1, hi = words.length - idx, best = 1;
-        while (lo <= hi) {
-          const mid = (lo + hi) >> 1;
-          current = [{ type: block.type, text: words.slice(idx, idx + mid).join(" ") }];
-          render();
-          if (fits()) { best = mid; lo = mid + 1; } else { hi = mid - 1; }
-        }
-        const chunkText = words.slice(idx, idx + best).join(" ");
-        idx += best;
-        current = [{ type: block.type, text: chunkText }];
-        if (idx < words.length) {
-          pages.push(current);
-          current = [];
-        }
-      }
-    }
+    let currentHeight = 0;
 
     for (const block of blocks) {
       if (block.type === "h" && current.length > 0) {
         // 标题不能塞在上一章内容的末尾——另起一页，让标题落在新页最上面
         pages.push(current);
         current = [];
+        currentHeight = 0;
       }
-      current.push(block);
-      render();
-      if (fits()) continue;
-      current.pop();
-      if (current.length === 0) {
-        splitLongBlock(block);
+      const h = estimateHeight(ctx, block, contentWidth, fontPx);
+      if (current.length === 0 && h > height) {
+        splitLongBlock(ctx, block, contentWidth, fontPx, height, pages);
         continue;
       }
-      pages.push(current);
-      current = [block];
-      render();
-      if (!fits()) {
+      if (current.length > 0 && currentHeight + h > height) {
+        pages.push(current);
         current = [];
-        splitLongBlock(block);
+        currentHeight = 0;
       }
+      current.push(block);
+      currentHeight += h;
     }
     if (current.length) pages.push(current);
 
-    document.body.removeChild(measurer);
     return pages.length ? pages : [[]];
   }
 
+  // 章节导航侧边栏要用：每次分页完之后，把所有标题块当前落在第几页
+  // 整理成一个列表。
+  function collectHeadings(blocks, pages) {
+    const pageOfHeading = new Map();
+    pages.forEach((page, idx) => {
+      if (page.length && page[0].type === "h") pageOfHeading.set(page[0], idx + 1);
+    });
+    return blocks
+      .filter((b) => b.type === "h")
+      .map((b) => ({ text: b.text, page: pageOfHeading.get(b) || null }))
+      .filter((h) => h.page != null);
+  }
+
   async function load(fileBlob, opts, onProgress) {
-    const { pageW, pageH } = opts;
+    const { pageW, pageH, fontPx } = opts;
     const arrayBuffer = await fileBlob.arrayBuffer();
     const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
 
@@ -320,15 +392,20 @@ const ReflowReader = (() => {
     });
     if (onProgress) onProgress("正在重新排版…");
     // 提取文字（慢，跑一次全书）和排版分成两步——沉浸模式切换页面尺寸时
-    // 只需要重新排版（快，纯本地测量），不用把整本书的文字重新提取一遍。
+    // 只需要重新排版（快，纯估算不碰 DOM），不用把整本书的文字重新提取一遍。
     const blocks = linesToBlocks(pagesLines);
     const tocPairs = buildTocPairs(blocks);
-    let pages = paginateBlocks(blocks, pageW, pageH);
+    let curFontPx = fontPx;
+    let pages = paginateBlocks(blocks, pageW, pageH, curFontPx);
     applyTocLinks(tocPairs, pages);
+    let headings = collectHeadings(blocks, pages);
 
     return {
       get numPages() {
         return pages.length;
+      },
+      get headings() {
+        return headings;
       },
       async renderPage(pageNum, leaf) {
         if (leaf.dataset.rendered) return;
@@ -340,9 +417,11 @@ const ReflowReader = (() => {
         leaf.appendChild(pageEl);
         wrapWords(pageEl);
       },
-      repaginate(newW, newH) {
-        pages = paginateBlocks(blocks, newW, newH);
+      repaginate(newW, newH, newFontPx) {
+        if (newFontPx != null) curFontPx = newFontPx;
+        pages = paginateBlocks(blocks, newW, newH, curFontPx);
         applyTocLinks(tocPairs, pages);
+        headings = collectHeadings(blocks, pages);
         return pages.length;
       },
     };

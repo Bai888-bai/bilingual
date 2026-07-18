@@ -12,6 +12,7 @@
     <div class="readerTopBar">
       <button class="backBtn" id="backBtn" title="返回书架">←</button>
       <div class="readerTitle" id="readerTitle">加载中…</div>
+      <button class="collapseBtn" id="collapseBtn" title="收起工具栏">收起 ⌃</button>
       <button class="modeToggleBtn" id="modeToggleBtn" style="display:none" title="切换排版模式">Aa 重排</button>
       <button class="layoutToggleBtn" id="layoutToggleBtn" title="单页/双页">▯ 单页</button>
       <div class="fontSizeCtl">
@@ -20,6 +21,7 @@
       </div>
       <div class="readerProgress" id="readerProgress"></div>
     </div>
+    <div class="expandHandle" id="expandHandle" title="展开工具栏">⌄</div>
 
     <div class="readerStage" id="readerStage">
       <div class="readerLoading" id="readerLoading">
@@ -32,14 +34,24 @@
     </div>
 
     <div class="readerBottomBar" id="readerBottomBar" style="display:none">
-      <div class="readerBottomRow">
-        <button id="btnPrev" title="上一页">‹</button>
-        <input type="range" id="pageSlider" min="0" max="0" value="0" />
-        <button id="btnNext" title="下一页">›</button>
-      </div>
-      <div class="readerPageNum">
+      <button id="btnPrev" title="上一页">‹</button>
+      <div class="pageIndicator">
         <input type="number" id="readerPageInput" min="1" title="输入页码跳转" /><span id="readerPageTotal"></span>
       </div>
+      <button id="btnNext" title="下一页">›</button>
+    </div>
+
+    <button class="sidePanelTab" id="sidePanelTab" title="章节 / 跳转页码">☰</button>
+    <div class="sidePanelScrim" id="sidePanelScrim"></div>
+    <div class="sidePanel" id="sidePanel">
+      <div class="sidePanelHeader">
+        <span>章节</span>
+        <button id="sidePanelClose" title="收起">✕</button>
+      </div>
+      <div class="sidePanelJump">
+        <input type="range" id="pageSlider" min="0" max="0" value="0" />
+      </div>
+      <div class="chapterList" id="chapterList"></div>
     </div>
   </div>
 

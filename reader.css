@@ -23,12 +23,16 @@ body {
 .readerApp.immersive .readerTopBar,
 .readerApp.immersive .readerBottomBar { display: none !important; }
 .readerApp.immersive .readerStage { padding: 3px; }
+/* 收起状态下才露出那个半圆拉手；工具栏展开的时候它自己藏起来，不然
+   会跟工具栏中间的"收起"按钮重叠。 */
+.expandHandle { display: none; }
+.readerApp.immersive .expandHandle { display: flex; }
 
 /* 暖色调，跟下面米黄色的书页更搭——用冷色系深蓝灰当工具栏总感觉像在用
    一个"软件"而不是在"看书"。 */
 .readerTopBar {
   display: flex; align-items: center; gap: 10px; padding: calc(8px + var(--safe-top)) 14px 8px;
-  background: #2b2015; color: #ede1c8; flex-shrink: 0; z-index: 20;
+  background: #2b2015; color: #ede1c8; flex-shrink: 0; z-index: 20; position: relative;
   box-shadow: 0 2px 10px rgba(0,0,0,0.25);
 }
 .readerTopBar .backBtn {
@@ -38,6 +42,25 @@ body {
 .readerTopBar .backBtn:hover { background: rgba(255,255,255,0.18); }
 .readerTitle { flex: 1; font-size: 13px; color: #cabb9b; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .readerProgress { display: none; } /* 页码挪到底部实时显示，顶部不再重复 */
+
+/* "收起"按钮用绝对定位卡在黑条正中间，不占 flex 排列里的位置，不会被
+   左右两边的按钮把它挤偏——这样不管两边按钮加减，它永远在正中央。 */
+.collapseBtn {
+  position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
+  border: none; background: rgba(255,255,255,0.12); color: #ede1c8; height: 24px; padding: 0 12px;
+  border-radius: 12px; font-size: 11px; cursor: pointer; white-space: nowrap; z-index: 1;
+}
+.collapseBtn:hover { background: rgba(255,255,255,0.2); }
+
+/* 顶部中间探出来的半圆拉手，收起工具栏之后唯一常驻可见的入口——
+   不用再靠双击书页这种不直观的手势去猜。 */
+.expandHandle {
+  position: fixed; top: 0; left: 50%; transform: translateX(-50%);
+  width: 52px; height: 20px; border-radius: 0 0 999px 999px;
+  background: #2b2015; color: #ede1c8; align-items: center; justify-content: center;
+  cursor: pointer; z-index: 25; font-size: 13px; box-shadow: 0 3px 10px rgba(0,0,0,0.3);
+}
+.expandHandle:hover { background: #3a2c1c; }
 
 .readerStage {
   flex: 1; min-height: 0; position: relative; display: flex; align-items: center; justify-content: center;
@@ -139,26 +162,70 @@ body {
 .readerStage:hover .readerNav { opacity: 0.7; }
 .readerNav:hover { opacity: 1 !important; }
 
+/* 底部原来是两行（按钮+滑块一行，页码文字一行），滑块现在挪到侧边栏
+   里了，这里瘦成一行，高度小很多，也不再是"一大条黑"了。 */
 .readerBottomBar {
-  display: flex; flex-direction: column; align-items: center; gap: 6px;
-  padding: 8px 14px calc(10px + var(--safe-bottom)); background: #2b2015; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center; gap: 16px;
+  padding: 6px 14px calc(6px + var(--safe-bottom)); background: #2b2015; flex-shrink: 0;
   box-shadow: 0 -2px 10px rgba(0,0,0,0.25);
 }
-.readerBottomRow { display: flex; align-items: center; justify-content: center; gap: 14px; width: 100%; }
 .readerBottomBar button {
-  border: none; background: rgba(255,255,255,0.1); color: #ede1c8; width: 36px; height: 36px; border-radius: 50%;
-  font-size: 15px; cursor: pointer; flex-shrink: 0; transition: background 0.15s ease, transform 0.1s ease;
+  border: none; background: rgba(255,255,255,0.1); color: #ede1c8; width: 30px; height: 30px; border-radius: 50%;
+  font-size: 14px; cursor: pointer; flex-shrink: 0; transition: background 0.15s ease, transform 0.1s ease;
 }
 .readerBottomBar button:hover { background: rgba(255,255,255,0.18); }
 .readerBottomBar button:active { transform: scale(0.92); }
 .readerBottomBar button:disabled { opacity: 0.35; cursor: default; }
-.readerBottomBar input[type=range] { flex: 1; max-width: 420px; accent-color: #c9a15f; }
-.readerPageNum { font-size: 12px; color: #baa584; letter-spacing: 0.3px; text-align: center; }
-.readerPageNum input {
-  width: 3.5em; font: inherit; color: #ede1c8; background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.15);
-  border-radius: 4px; text-align: right; padding: 1px 3px;
+.pageIndicator {
+  display: flex; align-items: baseline; gap: 4px; font-size: 12px; color: #baa584;
+  background: rgba(255,255,255,0.07); border-radius: 999px; padding: 4px 12px;
 }
-.readerPageNum input::-webkit-outer-spin-button, .readerPageNum input::-webkit-inner-spin-button { margin: 0; }
+.pageIndicator input {
+  width: 3em; font: inherit; font-weight: 700; color: #ede1c8; background: transparent; border: none;
+  text-align: right; padding: 0;
+}
+.pageIndicator input::-webkit-outer-spin-button, .pageIndicator input::-webkit-inner-spin-button { margin: 0; }
+
+/* 侧边栏：章节列表 + 精确跳页，从右边滑出，跟工具栏收起/展开是两码事——
+   沉浸模式下也能点右边那个小竖条把它叫出来，不需要先展开工具栏。 */
+.sidePanelTab {
+  position: fixed; right: 0; top: 50%; transform: translateY(-50%);
+  width: 22px; height: 64px; border: none; border-radius: 10px 0 0 10px;
+  background: rgba(43,32,21,0.75); color: #ede1c8; font-size: 13px; cursor: pointer; z-index: 22;
+  writing-mode: vertical-rl; letter-spacing: 2px;
+}
+.sidePanelTab:hover { background: #2b2015; }
+.readerApp.sidePanelOpen .sidePanelTab { display: none; }
+
+.sidePanelScrim {
+  position: fixed; inset: 0; background: rgba(0,0,0,0.35); z-index: 29;
+  opacity: 0; pointer-events: none; transition: opacity 0.2s ease;
+}
+.readerApp.sidePanelOpen .sidePanelScrim { opacity: 1; pointer-events: auto; }
+
+.sidePanel {
+  position: fixed; top: 0; right: 0; bottom: 0; width: min(280px, 82vw);
+  background: #fdfbf6; color: #2b2015; z-index: 30; box-shadow: -6px 0 24px rgba(0,0,0,0.3);
+  display: flex; flex-direction: column; transform: translateX(100%); transition: transform 0.22s ease;
+  padding-top: var(--safe-top); padding-bottom: var(--safe-bottom);
+}
+.readerApp.sidePanelOpen .sidePanel { transform: translateX(0); }
+.sidePanelHeader {
+  display: flex; align-items: center; justify-content: space-between; padding: 14px 16px;
+  border-bottom: 1px solid #e8ddc7; font-weight: 700; flex-shrink: 0;
+}
+.sidePanelHeader button {
+  border: none; background: transparent; color: #6b5a3d; font-size: 15px; cursor: pointer; padding: 4px;
+}
+.sidePanelJump { padding: 12px 16px; border-bottom: 1px solid #e8ddc7; flex-shrink: 0; }
+.sidePanelJump input[type=range] { width: 100%; accent-color: #8a5a1f; }
+.chapterList { flex: 1; overflow-y: auto; padding: 6px 0; }
+.chapterList .chapterItem {
+  display: block; width: 100%; text-align: left; border: none; background: transparent; color: #2b2015;
+  padding: 9px 16px; font-size: 13px; cursor: pointer; border-bottom: 1px solid #f1e9d8;
+}
+.chapterList .chapterItem:hover { background: #f3ead6; }
+.chapterList .chapterEmpty { padding: 16px; font-size: 12px; color: #a3937a; }
 
 /* 词语浮窗（跟浏览器扩展 ui.js 的设计一致） */
 .wordPopup {

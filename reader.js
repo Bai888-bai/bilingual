@@ -36,6 +36,12 @@ async function runReader() {
   const fontSizeUp = document.getElementById("fontSizeUp");
   const pageInput = document.getElementById("readerPageInput");
   const pageTotalEl = document.getElementById("readerPageTotal");
+  const collapseBtn = document.getElementById("collapseBtn");
+  const expandHandle = document.getElementById("expandHandle");
+  const sidePanelTab = document.getElementById("sidePanelTab");
+  const sidePanelClose = document.getElementById("sidePanelClose");
+  const sidePanelScrim = document.getElementById("sidePanelScrim");
+  const chapterListEl = document.getElementById("chapterList");
   const readerAppEl = document.querySelector(".readerApp");
   const readerStageEl = document.getElementById("readerStage");
 
@@ -127,7 +133,7 @@ async function runReader() {
     if (book.type === "pdf") {
       loadingTextEl.textContent = "正在解析 PDF…";
       loader = useReflow
-        ? await ReflowReader.load(book.fileBlob, { pageW, pageH }, (msg) => { loadingTextEl.textContent = msg; })
+        ? await ReflowReader.load(book.fileBlob, { pageW, pageH, fontPx: fontSize }, (msg) => { loadingTextEl.textContent = msg; })
         : await PdfReader.load(book.fileBlob);
     } else {
       loadingTextEl.textContent = "正在解析 EPUB…";
@@ -264,16 +270,16 @@ async function runReader() {
   });
   pageInput.addEventListener("click", (e) => e.stopPropagation());
 
-  // 沉浸模式默认开着（前面已经用沉浸尺寸排过版了），双击书页中间（不是点
-  // 单词、不是点边缘翻页热区）在"工具栏收起"和"工具栏露出来"之间切换。
-  // 分页是按固定像素尺寸提前排好的，工具栏一露出/收起可用区域就变了，
-  // 所以重排模式下必须真的用新尺寸重新分页——只是切换工具栏显隐而书还是
-  // 原来的大小，没有意义。
+  // 沉浸模式默认开着（前面已经用沉浸尺寸排过版了）。工具栏顶部中间的
+  // "收起"按钮和收起之后露出来的那个小拉手负责切换——不用双击这种不
+  // 直观的手势去猜。分页是按固定像素尺寸提前排好的，工具栏一露出/收起
+  // 可用区域就变了，所以重排模式下必须真的用新尺寸重新分页——只是切换
+  // 工具栏显隐而书还是原来的大小，没有意义。
   async function rebuildAtSize(w, h) {
     const ratio = numPages > 1 ? pageFlip.getCurrentPageIndex() / (numPages - 1) : 0;
     try {
       if (loader.repaginate) {
-        numPages = await loader.repaginate(w, h);
+        numPages = await loader.repaginate(w, h, fontSize);
       }
       // 顺序很重要：老的 pageFlip 实例内部还引用着当前这批 .leaf 节点，
       // 必须先 destroy 它，再清空重建 DOM——反过来的话 destroy 会因为
@@ -298,6 +304,7 @@ async function runReader() {
       onFlip();
       curW = w;
       curH = h;
+      refreshChapterList();
     } catch (err) {
       showToast("切换显示模式失败：" + err.message);
     }
@@ -312,6 +319,42 @@ async function runReader() {
     const { w, h } = computeStageSize(on, spreadMode);
     rebuildAtSize(w, h);
   }
+  collapseBtn.addEventListener("click", () => setImmersive(true));
+  expandHandle.addEventListener("click", () => setImmersive(false));
+
+  // 侧边栏：章节列表 + 精确跳页，跟工具栏收起/展开是独立的两件事，沉浸
+  // 模式下也能直接点右边那条小竖条叫出来，不用先展开工具栏。
+  function setSidePanel(on) {
+    readerAppEl.classList.toggle("sidePanelOpen", on);
+  }
+  sidePanelTab.addEventListener("click", () => setSidePanel(true));
+  sidePanelClose.addEventListener("click", () => setSidePanel(false));
+  sidePanelScrim.addEventListener("click", () => setSidePanel(false));
+
+  function refreshChapterList() {
+    const headings = loader.headings;
+    chapterListEl.innerHTML = "";
+    if (!headings || !headings.length) {
+      const empty = document.createElement("div");
+      empty.className = "chapterEmpty";
+      empty.textContent = "这本书没有识别到章节标题";
+      chapterListEl.appendChild(empty);
+      return;
+    }
+    for (const h of headings) {
+      const btn = document.createElement("button");
+      btn.className = "chapterItem";
+      btn.textContent = h.text;
+      btn.addEventListener("click", () => {
+        const idx = Math.min(numPages - 1, Math.max(0, h.page - 1));
+        pageFlip.turnToPage(idx);
+        onFlip();
+        setSidePanel(false);
+      });
+      chapterListEl.appendChild(btn);
+    }
+  }
+  refreshChapterList();
 
   layoutToggleBtn.addEventListener("click", () => {
     spreadMode = !spreadMode;
@@ -330,25 +373,6 @@ async function runReader() {
   }
   fontSizeDown.addEventListener("click", () => changeFontSize(-1));
   fontSizeUp.addEventListener("click", () => changeFontSize(1));
-
-  // 用双击而不是单击——单击书页中间跟"点单词看释义"这类正常阅读动作
-  // 太容易混，双击才是个明确、不会跟别的手势冲突的"呼出/收起工具栏"信号。
-  document.addEventListener("dblclick", (e) => {
-    if (
-      e.target.closest(".btr-w") ||
-      e.target.closest(".readerNav") ||
-      e.target.closest(".readerTopBar") ||
-      e.target.closest(".readerBottomBar") ||
-      e.target.closest(".wordPopup") ||
-      e.target.closest(".btr-toc-link") ||
-      !e.target.closest(".leaf")
-    ) {
-      return;
-    }
-    const sel = window.getSelection();
-    if (sel && sel.toString().trim()) return;
-    setImmersive(!immersive);
-  });
 
   // 目录页里的章节条目：点了直接跳到那一章开头
   document.addEventListener("click", (e) => {
