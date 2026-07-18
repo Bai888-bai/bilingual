@@ -13,6 +13,13 @@ body {
 
 .readerApp { display: flex; flex-direction: column; height: 100dvh; }
 
+/* 沉浸模式：点书页中间收起上下工具栏，把这部分屏幕还给书本身。
+   工具栏一 display:none，readerStage（flex:1）会自动占满腾出来的空间，
+   reader.js 那边会拿到新的可视区域尺寸重新计算分页并重建翻页组件。 */
+.readerApp.immersive .readerTopBar,
+.readerApp.immersive .readerBottomBar { display: none; }
+.readerApp.immersive .readerStage { padding: 3px; }
+
 .readerTopBar {
   display: flex; align-items: center; gap: 10px; padding: calc(8px + var(--safe-top)) 14px 8px;
   background: #1d2029; color: #fff; flex-shrink: 0; z-index: 20;

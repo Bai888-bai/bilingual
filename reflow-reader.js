@@ -173,6 +173,11 @@ const ReflowReader = (() => {
     }
 
     for (const block of blocks) {
+      if (block.type === "h" && current.length > 0) {
+        // 标题不能塞在上一章内容的末尾——另起一页，让标题落在新页最上面
+        pages.push(current);
+        current = [];
+      }
       current.push(block);
       render();
       if (fits()) continue;
@@ -204,11 +209,15 @@ const ReflowReader = (() => {
       if (onProgress) onProgress(`正在提取文字 (${done}/${total})…`);
     });
     if (onProgress) onProgress("正在重新排版…");
+    // 提取文字（慢，跑一次全书）和排版分成两步——沉浸模式切换页面尺寸时
+    // 只需要重新排版（快，纯本地测量），不用把整本书的文字重新提取一遍。
     const blocks = linesToBlocks(pagesLines);
-    const pages = paginateBlocks(blocks, pageW, pageH);
+    let pages = paginateBlocks(blocks, pageW, pageH);
 
     return {
-      numPages: pages.length,
+      get numPages() {
+        return pages.length;
+      },
       async renderPage(pageNum, leaf) {
         if (leaf.dataset.rendered) return;
         leaf.dataset.rendered = "1";
@@ -218,6 +227,10 @@ const ReflowReader = (() => {
         leaf.innerHTML = "";
         leaf.appendChild(pageEl);
         wrapWords(pageEl);
+      },
+      repaginate(newW, newH) {
+        pages = paginateBlocks(blocks, newW, newH);
+        return pages.length;
       },
     };
   }

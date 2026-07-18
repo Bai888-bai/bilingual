@@ -83,35 +83,48 @@ async function runReader() {
     return;
   }
 
-  const numPages = loader.numPages;
+  let numPages = loader.numPages;
   if (!numPages) {
     loadingTextEl.textContent = "这本书是空的，或者格式不支持";
     return;
   }
 
-  const leaves = [];
-  for (let i = 1; i <= numPages; i++) {
-    const leaf = document.createElement("div");
-    leaf.className = "leaf";
-    leaf.dataset.pageNum = i;
-    flipbookEl.appendChild(leaf);
-    leaves.push(leaf);
+  let leaves = [];
+  function buildLeaves() {
+    flipbookEl.innerHTML = "";
+    leaves = [];
+    for (let i = 1; i <= numPages; i++) {
+      const leaf = document.createElement("div");
+      leaf.className = "leaf";
+      leaf.dataset.pageNum = i;
+      flipbookEl.appendChild(leaf);
+      leaves.push(leaf);
+    }
   }
+  buildLeaves();
 
   loadingEl.style.display = "none";
   flipbookEl.style.display = "block";
   bottomBar.style.display = "flex";
   slider.max = numPages - 1;
 
-  const pageFlip = new St.PageFlip(flipbookEl, {
-    width: pageW,
-    height: pageH,
-    size: "fixed",
-    showCover: false,
-    flippingTime: 500,
-    usePortrait: true,
-  });
-  pageFlip.loadFromHTML(document.querySelectorAll("#flipbook .leaf"));
+  function createPageFlip(w, h) {
+    const pf = new St.PageFlip(flipbookEl, {
+      width: w,
+      height: h,
+      size: "fixed",
+      showCover: false,
+      flippingTime: 500,
+      usePortrait: true,
+      // 库自带"点书页任意位置也能翻页"，跟点单词/点中间收起工具栏的手势
+      // 抢事件，关掉后只留边缘那两个 nav 区域能触发翻页，不会再误触。
+      disableFlipByClick: true,
+    });
+    pf.loadFromHTML(document.querySelectorAll("#flipbook .leaf"));
+    pf.on("flip", onFlip);
+    return pf;
+  }
+  let pageFlip = createPageFlip(pageW, pageH);
 
   async function renderAround(index) {
     const toRender = [index, index + 1, index - 1].filter((i) => i >= 0 && i < numPages);
@@ -145,7 +158,6 @@ async function runReader() {
     renderAround(idx);
     saveProgress(idx);
   }
-  pageFlip.on("flip", onFlip);
 
   const startIndex = Math.min(book.lastPage || 0, numPages - 1);
   await renderAround(startIndex);
@@ -170,5 +182,64 @@ async function runReader() {
     const idx = Number(slider.value);
     pageNumEl.textContent = `${idx + 1} / ${numPages}`;
     pageFlip.turnToPage(idx);
+  });
+
+  // 沉浸模式：点书页中间（不是点单词、不是点边缘翻页热区）收起上下工具栏，
+  // 让书本身尽量占满屏幕。分页是按固定像素尺寸提前排好的，工具栏一收起
+  // 可用区域变了，所以重排模式下必须真的用新尺寸重新分页——只是把工具栏
+  // 隐藏而书还是原来的大小，中间会空出一圈没用上的黑边，没有意义。
+  const readerAppEl = document.querySelector(".readerApp");
+  const readerStageEl = document.getElementById("readerStage");
+  let immersive = false;
+
+  function computeStageSize(isImmersive) {
+    const rect = readerStageEl.getBoundingClientRect();
+    const sidePad = isImmersive ? 6 : 24;
+    const topBotPad = isImmersive ? 6 : 16;
+    const maxW = isImmersive ? 960 : 720;
+    return {
+      w: Math.max(320, Math.min(maxW, rect.width - sidePad)),
+      h: Math.max(420, rect.height - topBotPad),
+    };
+  }
+
+  async function rebuildAtSize(w, h) {
+    const ratio = numPages > 1 ? pageFlip.getCurrentPageIndex() / (numPages - 1) : 0;
+    if (loader.repaginate) {
+      numPages = await loader.repaginate(w, h);
+    }
+    buildLeaves();
+    pageFlip.destroy();
+    pageFlip = createPageFlip(w, h);
+    slider.max = numPages - 1;
+    const idx = Math.min(numPages - 1, Math.round(ratio * (numPages - 1)));
+    await renderAround(idx);
+    if (idx > 0) pageFlip.turnToPage(idx);
+    onFlip();
+  }
+
+  function setImmersive(on) {
+    immersive = on;
+    readerAppEl.classList.toggle("immersive", on);
+    requestAnimationFrame(() => {
+      const { w, h } = computeStageSize(on);
+      rebuildAtSize(w, h);
+    });
+  }
+
+  document.addEventListener("click", (e) => {
+    if (
+      e.target.closest(".btr-w") ||
+      e.target.closest(".readerNav") ||
+      e.target.closest(".readerTopBar") ||
+      e.target.closest(".readerBottomBar") ||
+      e.target.closest(".wordPopup") ||
+      !e.target.closest(".leaf")
+    ) {
+      return;
+    }
+    const sel = window.getSelection();
+    if (sel && sel.toString().trim()) return;
+    setImmersive(!immersive);
   });
 }
