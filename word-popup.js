@@ -29,13 +29,19 @@ function wpCreatePopup(x, y) {
     if (rect.bottom > vh) box.style.top = Math.max(8, y - rect.height - 12) + "px";
   });
 
+  // 用 pointerdown 而不是 mousedown 来判断"点在外面了"——拖拽弹窗那段逻辑
+  // 用的是 pointerdown/pointermove/pointerup 这一整套 Pointer Events，
+  // 混用 mousedown 这个旧的鼠标事件在触屏上有时候目标元素解析跟
+  // pointerdown 对不上（两套事件体系各自独立触发、各自做命中测试），
+  // 统一成同一套事件更不容易出现"明明点在弹窗里，判断却说点在外面"
+  // 导致弹窗刚拖了一下/刚点了收藏按钮就被自己关掉的问题。
   const closeOnOutside = (e) => {
     if (!box.contains(e.target)) {
       wpRemovePopup();
-      document.removeEventListener("mousedown", closeOnOutside, true);
+      document.removeEventListener("pointerdown", closeOnOutside, true);
     }
   };
-  setTimeout(() => document.addEventListener("mousedown", closeOnOutside, true), 0);
+  setTimeout(() => document.addEventListener("pointerdown", closeOnOutside, true), 0);
 
   let dragging = false, dragOffsetX = 0, dragOffsetY = 0;
   box.addEventListener("pointerdown", (e) => {
