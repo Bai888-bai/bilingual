@@ -78,26 +78,45 @@ main#pages { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; }
 }
 .importBtn:hover { background: var(--primary-dark); }
 
+/* 书架：书一本本立着排成一排，每排底下垫一条"搁板"——用每本书自己的
+   border-bottom 当搁板缝，而不是想办法让背景条纹跟 flex-wrap 换行对齐，
+   简单很多，flex-wrap 自动换行到第二排的时候搁板自然也跟着换。 */
 .bookGrid {
-  display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 16px; margin-top: 6px;
+  display: flex; flex-wrap: wrap; align-items: flex-end; gap: 0 3px;
+  margin-top: 6px; padding: 22px 14px 0; border-radius: var(--radius);
+  background: linear-gradient(180deg, #241a10, #1a130c);
 }
-.bookCard { cursor: pointer; position: relative; }
-.bookCover {
-  aspect-ratio: 3 / 4; border-radius: var(--radius-sm); background: var(--surface); box-shadow: var(--shadow);
-  display: flex; align-items: center; justify-content: center; font-size: 40px;
-  border: 1px solid var(--border); transition: transform 0.15s ease, box-shadow 0.15s ease;
-  overflow: hidden;
+.bookSpine {
+  position: relative; cursor: pointer; flex-shrink: 0;
+  width: 50px; height: 196px; margin-bottom: 16px;
+  border-radius: 3px 5px 5px 3px; background-size: cover; background-position: center;
+  box-shadow: 2px 6px 10px rgba(0,0,0,0.45), inset -8px 0 14px rgba(0,0,0,0.3), inset 2px 0 0 rgba(255,255,255,0.12);
+  border-bottom: 10px solid #4a3420; /* 搁板：相邻书本连成一条通长的板 */
+  transition: transform 0.15s ease;
+  display: flex; flex-direction: column; align-items: center; justify-content: flex-end; padding-bottom: 10px;
 }
-.bookCard:hover .bookCover { transform: translateY(-3px); box-shadow: var(--shadow-lg); }
-.bookCover.pdf { background: linear-gradient(160deg, #fff1f1, #ffffff); }
-.bookCover.epub { background: linear-gradient(160deg, #eef7ff, #ffffff); }
-.bookTitle { font-size: 12.5px; margin-top: 8px; text-align: center; line-height: 1.35; word-break: break-word; }
-.bookDeleteBtn {
-  position: absolute; top: 6px; right: 6px; width: 24px; height: 24px; border-radius: 50%;
-  border: none; background: rgba(20,22,30,0.55); color: #fff; font-size: 12px; cursor: pointer;
+.bookSpine:hover { transform: translateY(-10px) rotate(-1deg); z-index: 2; }
+.bookSpine.hasCover { background-color: #333; }
+.spineTitle {
+  writing-mode: vertical-rl; text-orientation: mixed; color: #f2ead9; font-size: 11.5px; font-weight: 700;
+  max-height: 150px; overflow: hidden; text-shadow: 0 1px 3px rgba(0,0,0,0.6); letter-spacing: 0.5px;
+}
+.spineType {
+  font-size: 8px; font-weight: 700; letter-spacing: 1px; color: rgba(255,255,255,0.75);
+  writing-mode: vertical-rl; margin-top: 6px;
+}
+.bookSpine.hasCover .spineType {
+  position: absolute; bottom: 12px; left: 4px; writing-mode: horizontal-tb; margin: 0;
+  background: rgba(0,0,0,0.45); padding: 1px 4px; border-radius: 3px;
+}
+.bookCoverBtn, .bookDeleteBtn {
+  position: absolute; top: 6px; width: 22px; height: 22px; border-radius: 50%;
+  border: none; background: rgba(20,22,30,0.6); color: #fff; font-size: 11px; cursor: pointer;
   display: flex; align-items: center; justify-content: center; opacity: 0; transition: opacity 0.15s ease;
 }
-.bookCard:hover .bookDeleteBtn { opacity: 1; }
+.bookCoverBtn { left: 5px; }
+.bookDeleteBtn { right: 5px; }
+.bookSpine:hover .bookCoverBtn, .bookSpine:hover .bookDeleteBtn { opacity: 1; }
 
 /* ---- 生词本占位 / 我的 ---- */
 .comingSoon { text-align: center; color: var(--text-muted); margin-top: 80px; }
