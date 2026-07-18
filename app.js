@@ -79,22 +79,21 @@ async function renderLibrary() {
   empty.style.display = "none";
   grid.innerHTML = books
     .map((b) => {
-      if (b.coverBlob) {
-        const url = URL.createObjectURL(b.coverBlob);
-        coverObjectUrls.push(url);
-        return `
-        <div class="bookSpine hasCover" data-id="${b.id}" style="background-image:url('${url}')">
-          <span class="spineType">${b.type === "pdf" ? "PDF" : "EPUB"}</span>
-          <button class="bookCoverBtn" data-id="${b.id}" title="更换封面">🖼</button>
-          <button class="bookDeleteBtn" data-id="${b.id}" title="删除">✕</button>
-        </div>`;
-      }
+      const bgStyle = b.coverBlob
+        ? (() => {
+            const url = URL.createObjectURL(b.coverBlob);
+            coverObjectUrls.push(url);
+            return `background-image:url('${url}')`;
+          })()
+        : `background:${colorForTitle(b.title)}`;
       return `
-      <div class="bookSpine" data-id="${b.id}" style="background:${colorForTitle(b.title)}">
-        <span class="spineTitle">${escapeHtml(b.title)}</span>
+      <div class="bookSpine ${b.coverBlob ? "hasCover" : ""}" data-id="${b.id}" style="${bgStyle}">
         <span class="spineType">${b.type === "pdf" ? "PDF" : "EPUB"}</span>
-        <button class="bookCoverBtn" data-id="${b.id}" title="设置封面">🖼</button>
+        <button class="bookCoverBtn" data-id="${b.id}" title="${b.coverBlob ? "更换封面" : "设置封面"}">🖼</button>
         <button class="bookDeleteBtn" data-id="${b.id}" title="删除">✕</button>
+        <div class="spineLabel" data-id="${b.id}">
+          <span class="spineLabelText" data-id="${b.id}" data-orig="${escapeHtml(b.title)}" title="点击可重命名">${escapeHtml(b.title)}</span>
+        </div>
       </div>`;
     })
     .join("");
@@ -112,9 +111,56 @@ async function renderLibrary() {
       coverInput.click();
     });
   });
+
+  // 书名标签点一下可以直接改——选中已有文字方便手一抖直接重打，回车/
+  // 点别处保存；标题清空了不让存，退回原来的名字。
+  function selectAllText(el) {
+    const range = document.createRange();
+    range.selectNodeContents(el);
+    const sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+  }
+  grid.querySelectorAll(".spineLabel").forEach((label) => label.addEventListener("click", (e) => e.stopPropagation()));
+  grid.querySelectorAll(".spineLabelText").forEach((span) => {
+    span.addEventListener("click", () => {
+      if (span.isContentEditable) return;
+      span.contentEditable = "true";
+      span.focus();
+      selectAllText(span);
+    });
+    span.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" || e.key === "Escape") {
+        e.preventDefault();
+        span.blur();
+      }
+    });
+    span.addEventListener("blur", async () => {
+      span.contentEditable = "false";
+      const id = Number(span.dataset.id);
+      const newTitle = span.textContent.trim();
+      if (!newTitle) {
+        span.textContent = span.dataset.orig;
+        return;
+      }
+      if (newTitle === span.dataset.orig) return;
+      const book = await getBookLocal(id);
+      if (!book) return;
+      book.title = newTitle;
+      await updateBookLocal(book);
+      span.dataset.orig = newTitle;
+      toast("书名已更新");
+    });
+  });
+
+  // 点书脊跳去阅读器之前，先让它往上"抽离书架"飘一下再跳转，
+  // 不是手一点屏幕就唰地跳到另一个页面，翻书这个动作要有点存在感。
   grid.querySelectorAll(".bookSpine").forEach((card) => {
     card.addEventListener("click", () => {
-      location.href = `reader.html?id=${card.dataset.id}`;
+      card.classList.add("lifting");
+      setTimeout(() => {
+        location.href = `reader.html?id=${card.dataset.id}`;
+      }, 200);
     });
   });
 }

@@ -25,8 +25,12 @@
 
     <div class="readerStage" id="readerStage">
       <div class="readerLoading" id="readerLoading">
-        <div class="spinner"></div>
-        <div id="readerLoadingText">正在打开书籍…</div>
+        <div class="bookLoader" aria-hidden="true">
+          <div class="bookLoaderSpine"></div>
+          <div class="bookLoaderPage left"></div>
+          <div class="bookLoaderPage right"></div>
+        </div>
+        <div id="readerLoadingText"></div>
       </div>
       <div id="flipbook" style="display:none"></div>
       <div class="readerNav prev" id="navPrev">‹</div>

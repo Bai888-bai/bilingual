@@ -67,11 +67,32 @@ body {
   overflow: hidden; padding: 8px 10px;
 }
 .readerLoading { color: #9aa4b2; text-align: center; }
-.readerLoading .spinner {
-  width: 32px; height: 32px; border-radius: 50%; border: 3px solid rgba(255,255,255,0.15);
-  border-top-color: var(--primary); margin: 0 auto 10px; animation: spin 0.8s linear infinite;
+/* 打开一本书应该看着像"翻开一本书"，不是一个转圈的通用 loading 图标——
+   两页纸绕着中间书脊来回扇动，配合下面几乎隐形的小字状态提示（真的
+   卡在提取文字这种慢操作上时还是有个字看得到，但不是主角）。 */
+.bookLoader { position: relative; width: 72px; height: 56px; margin: 0 auto 12px; perspective: 340px; }
+.bookLoaderSpine {
+  position: absolute; left: 50%; top: 1px; bottom: 1px; width: 3px; margin-left: -1.5px;
+  background: #8a5a2f; border-radius: 2px;
 }
-@keyframes spin { to { transform: rotate(360deg); } }
+.bookLoaderPage {
+  position: absolute; top: 0; width: 34px; height: 56px;
+  background: linear-gradient(135deg, #fbf5e8, #e2d3ac); border: 1px solid #8a5a2f;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.35);
+}
+.bookLoaderPage.left {
+  left: calc(50% - 34px); border-radius: 5px 2px 2px 5px; transform-origin: right center;
+  animation: bookFlipLeft 1.4s ease-in-out infinite;
+}
+.bookLoaderPage.right {
+  left: 50%; border-radius: 2px 5px 5px 2px; transform-origin: left center;
+  animation: bookFlipRight 1.4s ease-in-out infinite;
+}
+@keyframes bookFlipRight { 0%, 100% { transform: rotateY(0deg); } 50% { transform: rotateY(-150deg); } }
+@keyframes bookFlipLeft { 0%, 100% { transform: rotateY(0deg); } 50% { transform: rotateY(150deg); } }
+#readerLoadingText {
+  font: italic 12px var(--serif, Georgia, serif); color: #7d8496; min-height: 1.4em; letter-spacing: 0.2px;
+}
 
 /* page-flip 的 "stretch" 尺寸模式有时候是按 window 大小算的，不一定认
    得自己实际能用的父容器空间（被上下两条 bar 占掉的那部分），这里用
