@@ -42,6 +42,36 @@ function wpCreatePopup(x, y) {
   box.className = "wordPopup";
   document.body.appendChild(box);
 
+  // 临时排查用：不管是谁（我自己的代码还是别的脚本）把这个弹窗从
+  // 页面上摘掉，都在摘掉的那一刻打印真实调用栈——比事后猜"是不是被
+  // 我自己的逻辑删掉了"准得多。
+  const originalRemove = box.remove.bind(box);
+  box.remove = function () {
+    wpDebug("box.remove() called", { stack: new Error().stack });
+    return originalRemove();
+  };
+  if (!window.__wpRemoveChildPatched) {
+    window.__wpRemoveChildPatched = true;
+    const originalRemoveChild = Node.prototype.removeChild;
+    Node.prototype.removeChild = function (child) {
+      if (child && child.id === WP_POPUP_ID) {
+        wpDebug("removeChild() called on popup", { stack: new Error().stack });
+      }
+      return originalRemoveChild.call(this, child);
+    };
+  }
+  new MutationObserver((mutations) => {
+    for (const m of mutations) {
+      for (const removed of m.removedNodes) {
+        if (removed === box) {
+          wpDebug("MutationObserver saw box removed from body", {
+            stack: new Error().stack,
+          });
+        }
+      }
+    }
+  }).observe(document.body, { childList: true });
+
   // 弹出弹窗这个动作本身通常就是一次长按/点击手势的收尾——手势过程中
   // 正文里可能顺手残留了一点原生文字选区。留着不清掉的话，后面在弹窗
   // 里点按钮/拖拽时，word-interact.js 那边的 mouseup 逻辑读到的
