@@ -4,9 +4,20 @@
 const WP_POPUP_ID = "btr-popup-host";
 let wpCloseOnOutsideHandler = null;
 
+// 临时排查用：记录弹窗生命周期事件，出问题时在控制台跑
+// copy(JSON.stringify(window.__wpDebugLog)) 把日志复制出来。
+window.__wpDebugLog = window.__wpDebugLog || [];
+function wpDebug(event, detail) {
+  window.__wpDebugLog.push({ t: Date.now(), event, detail });
+  console.log("[wp]", event, detail);
+}
+
 function wpRemovePopup() {
   const old = document.getElementById(WP_POPUP_ID);
-  if (old) old.remove();
+  if (old) {
+    wpDebug("removePopup", { hadBox: true, stack: new Error().stack });
+    old.remove();
+  }
   // 每次开新弹窗都会注册一个新的 closeOnOutside 监听；如果旧弹窗是被
   // wpCreatePopup 直接顶替掉的（不是靠点击外部关掉的），旧监听不会
   // 自己清掉——它还留在 document 上，闭包里存的还是那个已经被删除的
@@ -31,6 +42,14 @@ function wpCreatePopup(x, y) {
   box.className = "wordPopup";
   document.body.appendChild(box);
 
+  // 弹出弹窗这个动作本身通常就是一次长按/点击手势的收尾——手势过程中
+  // 正文里可能顺手残留了一点原生文字选区。留着不清掉的话，后面在弹窗
+  // 里点按钮/拖拽时，word-interact.js 那边的 mouseup 逻辑读到的
+  // window.getSelection() 可能还是这个跟弹窗无关的旧选区，误当成
+  // "划了一句话要翻译"。清掉能从源头避免这个干扰。
+  const leftoverSel = window.getSelection();
+  if (leftoverSel) leftoverSel.removeAllRanges();
+
   const vw = window.innerWidth;
   const vh = window.innerHeight;
   let left = Math.min(x, vw - 340);
@@ -47,8 +66,18 @@ function wpCreatePopup(x, y) {
   // pointerdown 对不上（两套事件体系各自独立触发、各自做命中测试），
   // 统一成同一套事件更不容易出现"明明点在弹窗里，判断却说点在外面"
   // 导致弹窗刚拖了一下/刚点了收藏按钮就被自己关掉的问题。
+  const popupInstanceId = Date.now() + "-" + Math.random().toString(36).slice(2, 7);
+  wpDebug("createPopup", { popupInstanceId, x, y });
   const closeOnOutside = (e) => {
-    if (!box.contains(e.target)) {
+    const contains = box.contains(e.target);
+    wpDebug("closeOnOutside fired", {
+      popupInstanceId,
+      contains,
+      targetTag: e.target && e.target.tagName,
+      targetClass: e.target && e.target.className,
+      boxStillInDom: document.body.contains(box),
+    });
+    if (!contains) {
       wpRemovePopup();
     }
   };
@@ -64,6 +93,12 @@ function wpCreatePopup(x, y) {
   let dragging = false, dragOffsetX = 0, dragOffsetY = 0;
   box.addEventListener("pointerdown", (e) => {
     e.stopPropagation();
+    wpDebug("box own pointerdown", {
+      popupInstanceId,
+      targetTag: e.target && e.target.tagName,
+      targetClass: e.target && e.target.className,
+      isInteractive: !!e.target.closest("button, select, input, a"),
+    });
     if (e.target.closest("button, select, input, a")) return;
     dragging = true;
     const rect = box.getBoundingClientRect();
@@ -194,6 +229,7 @@ async function wpRenderWordDetail(box, data) {
   }
 
   saveBtn.addEventListener("click", async () => {
+    wpDebug("saveBtn click handler fired", { disabled: saveBtn.disabled, stillInDom: document.body.contains(saveBtn) });
     if (saveBtn.disabled) return;
     saveBtn.disabled = true;
     saveBtn.textContent = "☆ 收藏中…";

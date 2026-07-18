@@ -88,7 +88,16 @@
       const selText = sel ? sel.toString().trim() : "";
       const popupHost = document.getElementById(WP_POPUP_ID);
       const selInsidePopup = popupHost && sel && sel.anchorNode && popupHost.contains(sel.anchorNode);
-      if (selText && !selInsidePopup && /\s/.test(selText) && selText.split(/\s+/).length > 1) {
+      // 长按查词的手势本身，只要按住的 500ms 里手有一点点抖动（现实中
+      // 几乎必然），浏览器就会顺手在正文里原生选中一两个词——这个选区
+      // 点弹窗里的按钮/拖拽弹窗时未必会被浏览器自动清掉（点在 <button>
+      // 上不一定会清除页面别处的文字选区）。所以哪怕这次 mouseup 的
+      // e.target 明明是点在弹窗里，`sel` 读到的可能还是长按时残留的、
+      // 弹窗外的旧选区——只看 selInsidePopup（选区本身在不在弹窗内）
+      // 不够，还得看这次点击本身是不是发生在弹窗里，是的话无论选区是
+      // 什么都不该当成"划句子翻译"处理。
+      const clickInsidePopup = popupHost && e.target && e.target.closest && popupHost.contains(e.target);
+      if (selText && !selInsidePopup && !clickInsidePopup && /\s/.test(selText) && selText.split(/\s+/).length > 1) {
         handleSentence(selText, e.clientX, e.clientY);
         pendingSpan = null;
         return;
