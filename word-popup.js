@@ -2,10 +2,22 @@
 // 区别只是数据来源——扩展是 chrome.runtime 消息通信，这里直接调用
 // supabase-web-client.js 里的 sb*/lookupText 函数（同一个页面，不用跨进程通信）。
 const WP_POPUP_ID = "btr-popup-host";
+let wpCloseOnOutsideHandler = null;
 
 function wpRemovePopup() {
   const old = document.getElementById(WP_POPUP_ID);
   if (old) old.remove();
+  // 每次开新弹窗都会注册一个新的 closeOnOutside 监听；如果旧弹窗是被
+  // wpCreatePopup 直接顶替掉的（不是靠点击外部关掉的），旧监听不会
+  // 自己清掉——它还留在 document 上，闭包里存的还是那个已经被删除的
+  // 旧 box。下次随便点哪儿（包括点新弹窗自己），这个失效的旧监听会
+  // 先于新监听触发，`box.contains(e.target)` 对一个已从文档里摘掉的
+  // 节点必然是 false，于是把刚创建的新弹窗当成"点在外面"删掉——表现
+  // 就是新弹窗点一下就消失、收藏/拖拽都没反应。所以这里必须主动清理。
+  if (wpCloseOnOutsideHandler) {
+    document.removeEventListener("pointerdown", wpCloseOnOutsideHandler, true);
+    wpCloseOnOutsideHandler = null;
+  }
 }
 
 function wpEscapeHtml(s) {
@@ -38,9 +50,9 @@ function wpCreatePopup(x, y) {
   const closeOnOutside = (e) => {
     if (!box.contains(e.target)) {
       wpRemovePopup();
-      document.removeEventListener("pointerdown", closeOnOutside, true);
     }
   };
+  wpCloseOnOutsideHandler = closeOnOutside;
   setTimeout(() => document.addEventListener("pointerdown", closeOnOutside, true), 0);
 
   // 阅读器里的翻页库自己也全局监听 mousedown/pointerdown 来做"按住拖拽
