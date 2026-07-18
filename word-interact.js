@@ -86,7 +86,9 @@
       }
       const sel = window.getSelection();
       const selText = sel ? sel.toString().trim() : "";
-      if (selText && /\s/.test(selText) && selText.split(/\s+/).length > 1) {
+      const popupHost = document.getElementById(WP_POPUP_ID);
+      const selInsidePopup = popupHost && sel && sel.anchorNode && popupHost.contains(sel.anchorNode);
+      if (selText && !selInsidePopup && /\s/.test(selText) && selText.split(/\s+/).length > 1) {
         handleSentence(selText, e.clientX, e.clientY);
         pendingSpan = null;
         return;
