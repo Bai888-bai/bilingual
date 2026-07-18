@@ -158,8 +158,15 @@ function setCachedLookup(key, data) {
 
 async function lookupText(text) {
   const cacheKey = text.trim().toLowerCase();
+  const isSingleWord = /^[A-Za-z']+$/.test(text.trim());
   const cached = getCachedLookup(cacheKey);
-  if (cached) return cached;
+  // 单词命中缓存但没有 explains（词性/多义项/例句）的话，当作没缓存过
+  // 重新查一次——旧版本不管查没查到词典数据都无条件缓存，之前撞上一次
+  // Free Dictionary API 暂时性失败存下的"空"结果，不这样处理的话会一直
+  // 卡在没有词性/例句，且用户没有入口能清缓存重查。
+  if (cached && (!isSingleWord || (cached.explains && cached.explains.length > 0))) {
+    return cached;
+  }
 
   const resp = await fetch(LOOKUP_FN_URL, {
     method: "POST",
@@ -172,6 +179,8 @@ async function lookupText(text) {
   });
   const json = await resp.json();
   if (!json.ok) throw new Error(json.error || "LOOKUP_FAILED");
-  setCachedLookup(cacheKey, json.data);
+  if (!isSingleWord || (json.data.explains && json.data.explains.length > 0)) {
+    setCachedLookup(cacheKey, json.data);
+  }
   return json.data;
 }
