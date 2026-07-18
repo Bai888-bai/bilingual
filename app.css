@@ -118,8 +118,13 @@ main#pages { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; }
   box-shadow: inset 0 26px 30px -18px rgba(43,26,10,0.55);
 }
 .bookSpine {
+  /* 书本身的高度比"一格"矮一点（190px 而不是到 200px 才到搁板高光），
+     故意留出个小空隙——书底边贴近但不压住搁板前沿那条浅色高光，露出
+     一点点亮边，才看得出"书立在板子前面"而不是书把整条板子的反光全
+     挡住了。margin-bottom 相应多留一点，保证一格的总高度（书+间距）
+     还是跟背景搁板的重复周期对得上。 */
   position: relative; cursor: pointer; flex-shrink: 0;
-  width: 58px; height: 200px; margin-bottom: 16px;
+  width: 58px; height: 190px; margin-bottom: 26px;
   border-radius: 3px 5px 5px 3px; background-size: cover; background-position: center;
   box-shadow: 2px 6px 10px rgba(0,0,0,0.4), inset -8px 0 14px rgba(0,0,0,0.28), inset 2px 0 0 rgba(255,255,255,0.14);
   transition: transform 0.15s ease;
