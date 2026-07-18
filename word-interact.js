@@ -7,12 +7,19 @@
   let downX = 0, downY = 0, pendingSpan = null, longPressTimer = null, longPressFired = false;
 
   async function handleShortPress(span, x, y) {
-    const box = wpCreatePopup(x, y);
-    wpSetLoading(box);
+    // 跟插件的"替换"模式一致：短按原地把单词换成中文，再短按一次换回
+    // 英文；长按才弹出带收藏按钮的详情框。
+    if (span.classList.contains("translated")) {
+      span.textContent = span.dataset.w;
+      span.classList.remove("translated");
+      return;
+    }
     try {
       const data = await lookupText(span.dataset.w);
-      wpRenderWordBrief(box, data);
+      span.textContent = data.translation || span.dataset.w;
+      span.classList.add("translated");
     } catch (err) {
+      const box = wpCreatePopup(x, y);
       wpSetError(box, err.message);
     }
   }

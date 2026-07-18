@@ -181,16 +181,6 @@ function wpRenderExplains(explains) {
     .join("");
 }
 
-function wpRenderWordBrief(box, data) {
-  box.innerHTML = `
-    <span class="word">${wpEscapeHtml(data.query)}</span>
-    <span class="phonetic">${data.phonetic ? "/" + wpEscapeHtml(data.phonetic) + "/" : ""}</span>
-    <button class="speakBtn" title="朗读">🔊</button>
-    <div class="translation">${wpEscapeHtml(data.translation)}</div>
-  `;
-  box.querySelector(".speakBtn").addEventListener("click", () => wpSpeak(data.query, data.audioUrl));
-}
-
 async function wpRenderWordDetail(box, data) {
   const explains = wpRenderExplains(data.explains);
   box.innerHTML = `
