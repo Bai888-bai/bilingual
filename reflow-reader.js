@@ -323,39 +323,51 @@ const ReflowReader = (() => {
     const lines = wrapLineCount(ctx, block.text, contentWidth, indent);
     return (lines * fontPx * 1.75 + fontPx) * ESTIMATE_INFLATION;
   }
-  function splitLongBlock(ctx, block, contentWidth, fontPx, height, pages) {
+  // 按单词贪心拼行，从 block 里"咬"出正好能塞进 height 这么高的一块，
+  // 剩下没用完的词原样返回（rest），交给调用方决定接下来怎么处理——
+  // 可能是另起一页继续用 splitBlockOnce 咬，也可能是空间还够、直接
+  // 整段塞进当前页剩余空间。
+  //
+  // 这里没有像 estimateHeight/wrapLineCount 那样在第一行留出
+  // text-indent 缩进的空间——首行能多塞下几个词，会把后面所有换行的
+  // 位置都往后错开一点，实测一段十几行的文字这样能少算出整整一行，
+  // 用 estimateHeight 回头一验算会比传进来的 height 还高。这正是之前
+  // "一整句话在两页之间彻底消失"那个 bug 的另一半根源：本该保证咬出
+  // 来的每一块绝对不会超出可用高度，实际却因为跟另一个计算函数的口径
+  // 不一致没保证住。maxLines 在此基础上保守减一行，吸收这个已知口径差。
+  function splitBlockOnce(ctx, block, contentWidth, fontPx, height) {
     const isHeading = block.type === "h";
     const fPx = isHeading ? fontPx * 1.3 : fontPx;
     ctx.font = `${isHeading ? 700 : 400} ${fPx}px ${FONT_FAMILY}`;
     const lh = isHeading ? fPx * 1.4 : fontPx * 1.75;
-    // 这里按单词贪心拼行，没有像 estimateHeight/wrapLineCount 那样在第一行
-    // 留出 text-indent 的缩进空间——首行能多塞下几个词，会把后面所有换行
-    // 的位置都往后错开一点，实测一段十几行的文字这样能少算出整整一行。
-    // 结果就是这里切出来的每一块，拿 estimateHeight 回头一验算，会比
-    // 传进来的 height 还高——这正是用户反馈"一整句话在两页之间彻底消失"
-    // 的那个 bug 的另一半根源：这个函数本该保证切出来的每一块绝对不会
-    // 超出可用高度，实际却因为跟另一个计算函数的口径不一致而没保证住。
-    // maxLines 在此基础上再保守减一行，专门吸收这个已知的口径差。
     const maxLines = Math.max(1, Math.floor(height / lh) - 1);
     const spaceW = ctx.measureText(" ").width;
     const words = block.text.split(/\s+/).filter(Boolean);
-    let idx = 0;
-    while (idx < words.length) {
-      let lineW = 0, lines = 1, count = 0;
-      while (idx + count < words.length) {
-        const wW = ctx.measureText(words[idx + count]).width;
-        if (lineW > 0 && lineW + spaceW + wW > contentWidth) {
-          if (lines + 1 > maxLines) break;
-          lines++;
-          lineW = wW;
-        } else {
-          lineW += (lineW > 0 ? spaceW : 0) + wW;
-        }
-        count++;
+    let lineW = 0, lines = 1, count = 0;
+    while (count < words.length) {
+      const wW = ctx.measureText(words[count]).width;
+      if (lineW > 0 && lineW + spaceW + wW > contentWidth) {
+        if (lines + 1 > maxLines) break;
+        lines++;
+        lineW = wW;
+      } else {
+        lineW += (lineW > 0 ? spaceW : 0) + wW;
       }
-      if (count === 0) count = 1; // 保底，避免一个词都放不下时死循环
-      pages.push([{ type: block.type, text: words.slice(idx, idx + count).join(" ") }]);
-      idx += count;
+      count++;
+    }
+    if (count === 0) count = 1; // 保底，避免一个词都放不下时死循环
+    const text = words.slice(0, count).join(" ");
+    const restWords = words.slice(count);
+    return { text, rest: restWords.length ? restWords.join(" ") : null };
+  }
+  // 一整块自己就超过一整页可用高度（不是"剩余空间不够"，是连一整页都
+  // 装不下）——反复用 splitBlockOnce 咬，每一块都单独占一页，直到咬完。
+  function splitLongBlock(ctx, block, contentWidth, fontPx, height, pages) {
+    let remaining = block;
+    while (remaining) {
+      const { text, rest } = splitBlockOnce(ctx, remaining, contentWidth, fontPx, height);
+      pages.push([{ type: remaining.type, text }]);
+      remaining = rest ? { type: remaining.type, text: rest } : null;
     }
   }
 
@@ -384,6 +396,10 @@ const ReflowReader = (() => {
     const estimateSafetyMargin = fontPx * 1.75 * ESTIMATE_SAFETY_LINES;
     const contentHeight = Math.max(100, height - 60 - estimateSafetyMargin);
 
+    // 一行的高度，用来判断"当前页剩下的空间够不够塞下至少一行半"——
+    // 见下面 spaceLeft < lineHeight * 1.5 那处判断。
+    const lineHeight = fontPx * 1.75;
+
     const pages = [];
     let current = [];
     let currentHeight = 0;
@@ -395,31 +411,54 @@ const ReflowReader = (() => {
         current = [];
         currentHeight = 0;
       }
-      const h = estimateHeight(ctx, block, contentWidth, fontPx);
-      // 真正丢字的 bug 在这两步的顺序上：以前是先判断"这块要不要拆开"
-      // （只在 current.length === 0 时才检查），再判断"这块加进来会不会
-      // 超"。如果这块文字本身超长（h > contentHeight），但它不是恰好
-      // 排到空页面开头（前面已经攒了别的内容），第一个判断会被跳过；
-      // 紧接着第二个判断把当前页推走腾出空页，但这块超长的内容已经走完
-      // "要不要拆"这一步了，不会回头重新检查——于是整段被当成一个不可
-      // 分割的单元直接塞进新页，超出可视高度的尾巴部分被
-      // .reflowPage 的 overflow:hidden 吃掉，不会流到下一页，是真的从
-      // 书里消失了，不是"多留白"这种可以接受的小误差。用户拿原文
-      // 逐字对比找出来的就是这个问题：一整句话在两页之间完全找不到。
-      // 改成先处理"腾页面"，再检查"这块是不是超长"，确保任何一块超长
-      // 内容不管是排在空页开头、还是把前面内容挤走腾出的新页开头，都
-      // 会被正确送进 splitLongBlock 按行拆分，不会被整体囫囵吞下。
-      if (current.length > 0 && currentHeight + h > contentHeight) {
+      // 一个 block 可能因为放不下被拆成好几截，用 while 循环把这个 block
+      // （以及拆出来的后续部分）逐段消化完，每段要么直接塞进当前页剩余
+      // 空间，要么把剩余空间填满、进入下一页继续消化剩下的部分。这样
+      // 段落可以跨页断开，不再是"一页放不下就把整段挪到下一页、当前页
+      // 剩下的空白就白白留着"。标题不受影响：标题上面已经保证了
+      // current.length===0 才会走到这里，唯一可能进入拆分逻辑的分支是
+      // "整个标题自己就超过一整页"（下面第一个 if），标题本身不会被
+      // "填满剩余空间"这条路径拆开，跟原来的行为一致。
+      let remainingBlock = block;
+      while (remainingBlock) {
+        const h = estimateHeight(ctx, remainingBlock, contentWidth, fontPx);
+        const spaceLeft = contentHeight - currentHeight;
+        if (h <= spaceLeft) {
+          current.push(remainingBlock);
+          currentHeight += h;
+          remainingBlock = null;
+          continue;
+        }
+        if (current.length === 0) {
+          // 当前页完全空白，给了整页的高度还是装不下——这块内容本身就
+          // 超长，必须按行拆分，每一块单独占一页。
+          splitLongBlock(ctx, remainingBlock, contentWidth, fontPx, contentHeight, pages);
+          remainingBlock = null;
+          continue;
+        }
+        // 剩余空间不足以装完这个 block，但当前页不是空的——与其把整个
+        // block 挪到下一页、让这剩余的一截空间白白浪费掉，不如把它填满：
+        // 剩余空间太小（不到 1.5 行）就不折腾了，直接翻页；否则用
+        // splitBlockOnce 咬一口填满剩余空间，翻页，剩下的部分留到 while
+        // 循环下一轮继续处理（可能整段塞进新页，也可能还得再拆）。目标
+        // 高度比剩余空间本身再少留 0.3 行，多一点点保险——实测同样的
+        // 文字用 splitBlockOnce 和 estimateHeight 两种方式各量一遍，
+        // 结果不会完全一致（前者没算 text-indent），差距通常一两个像素，
+        // 极少数情况下能到半行左右，跟这个 app 一直以来"canvas 估算
+        // 最坏情况裁掉半行"的既有容忍度是同一个量级，不是新引入的问题。
+        if (spaceLeft < lineHeight * 1.5) {
+          pages.push(current);
+          current = [];
+          currentHeight = 0;
+          continue;
+        }
+        const { text, rest } = splitBlockOnce(ctx, remainingBlock, contentWidth, fontPx, spaceLeft - lineHeight * 0.3);
+        current.push({ type: remainingBlock.type, text });
         pages.push(current);
         current = [];
         currentHeight = 0;
+        remainingBlock = rest ? { type: remainingBlock.type, text: rest } : null;
       }
-      if (current.length === 0 && h > contentHeight) {
-        splitLongBlock(ctx, block, contentWidth, fontPx, contentHeight, pages);
-        continue;
-      }
-      current.push(block);
-      currentHeight += h;
     }
     if (current.length) pages.push(current);
 
