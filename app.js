@@ -36,12 +36,33 @@ fileInput.addEventListener("change", async (e) => {
     toast("只支持 PDF 或 EPUB 文件");
     return;
   }
-  await addBookLocal({
-    title: file.name.replace(/\.(pdf|epub)$/i, ""),
-    type: isPdf ? "pdf" : "epub",
-    fileBlob: file,
-    addedAt: Date.now(),
-  });
+  const type = isPdf ? "pdf" : "epub";
+  const title = file.name.replace(/\.(pdf|epub)$/i, "");
+  const addedAt = Date.now();
+  // 登录状态下，本地 IndexedDB 的 id 直接用 Supabase 那边分配的 id——
+  // 两边 id 从一开始就是同一个，reader.html?id= 不用另外维护一份本地
+  // id -> 远程 id 的映射表。云端没传成功（离线/未登录/文件太大）不影响
+  // 本地正常导入，只是这本书暂时不会出现在其它设备上。
+  let id, storagePath;
+  const session = sbGetSession();
+  if (session) {
+    try {
+      storagePath = `${session.userId}/${crypto.randomUUID()}.${type}`;
+      await sbUploadBookFile(storagePath, file);
+      id = await sbCreateLibraryBook({ title, type, storagePath, shelfOrder: 0 });
+    } catch (err) {
+      console.warn("书籍同步到云端失败（不影响本地导入）：", err);
+    }
+  }
+  // storagePath 必须跟着本地记录一起存——不然以后删这本书的时候，
+  // deleteBookLocal 那边找不到 storagePath，云端 Storage 里的文件就
+  // 删不掉，白占存储额度（这是测试过程中发现的真实问题，不是猜的）。
+  const localBook = { title, type, fileBlob: file, addedAt };
+  if (id != null) {
+    localBook.id = id;
+    localBook.storagePath = storagePath;
+  }
+  await addBookLocal(localBook);
   toast(`已导入《${file.name}》`);
   renderLibrary();
 });
@@ -57,31 +78,104 @@ function colorForTitle(title) {
   return `hsl(${hue}, 42%, 30%)`;
 }
 
-// 封面图存在 IndexedDB 里是 Blob，渲染的时候现转成 object URL——上一轮
-// 渲染生成的 URL 用完要 revoke 掉，不然每次刷新书架都攒一批不会被回收
-// 的内存引用。
-let coverObjectUrls = [];
-function revokeCoverUrls() {
-  coverObjectUrls.forEach((u) => URL.revokeObjectURL(u));
-  coverObjectUrls = [];
-}
-
 // 书架顺序是读者手动拖出来的，跟"什么时候导入的"（addedAt）没关系，
 // 单独存一个 shelfOrder 字段。老数据/新导入的书没有这个字段，第一次
 // 读到的时候按当前（按 addedAt 排的）顺序垫一个初始值再存回去，之后
 // 拖拽调整的就都是这个顺序了。
+//
+// 登录状态下这里还会做两件跟云端同步有关的事（都是"顺手做"，不阻塞
+// 本地书架正常显示，单本失败不影响其它书）：
+// 1. 封面存储方式从原始 Blob 升级成压缩过的 base64（coverData）——不
+//    管有没有登录都要转，纯粹是本地数据形态升级，早于同步这件事存在，
+//    不转的话这次改动一上线，之前传过封面的老书封面会突然消失。
+// 2. 跟云端 library_books 表对一遍：云端有本地没有的（比如刚在另一台
+//    设备上传的书）先建一条本地占位记录；本地有云端没有的存量老书
+//    （还没 storagePath，说明从没同步过）悄悄补传一次。
 async function getShelfBooks() {
   const books = await listBooksLocal();
-  const toBackfill = [];
+  const toBackfill = new Set();
   books.forEach((b, i) => {
     if (b.shelfOrder == null) {
       b.shelfOrder = i;
-      toBackfill.push(b);
+      toBackfill.add(b);
     }
   });
-  books.sort((a, b) => a.shelfOrder - b.shelfOrder);
+  for (const b of books) {
+    if (b.coverBlob && !b.coverData) {
+      try {
+        b.coverData = await compressImageToDataUri(b.coverBlob, 500, 0.82);
+        delete b.coverBlob;
+        toBackfill.add(b);
+      } catch (err) {
+        console.warn(`书籍《${b.title}》封面格式升级失败：`, err);
+      }
+    }
+  }
   for (const b of toBackfill) await updateBookLocal(b);
+
+  const session = sbGetSession();
+  if (session) {
+    try {
+      await syncShelfWithCloud(books, session);
+      const merged = await listBooksLocal();
+      merged.sort((a, b) => a.shelfOrder - b.shelfOrder);
+      return merged;
+    } catch (err) {
+      console.warn("书架云端同步失败（本地书架仍可正常使用）：", err);
+    }
+  }
+  books.sort((a, b) => a.shelfOrder - b.shelfOrder);
   return books;
+}
+
+async function syncShelfWithCloud(localBooks, session) {
+  const remoteBooks = await sbListLibraryBooks();
+  const remoteIds = new Set(remoteBooks.map((b) => b.id));
+  const localIds = new Set(localBooks.map((b) => b.id));
+
+  // 云端有、本地没有——多半是另一台设备上传的书，先在本地建一条占位
+  // 记录（没有 fileBlob），书架上照常显示书脊（封面/取色都不依赖
+  // fileBlob），真正点开的时候阅读器会发现没有文件再去云端下载。
+  for (const rb of remoteBooks) {
+    if (localIds.has(rb.id)) continue;
+    await addBookLocal({
+      id: rb.id,
+      title: rb.title,
+      type: rb.type,
+      storagePath: rb.storagePath,
+      coverData: rb.coverData,
+      addedAt: rb.addedAt,
+      shelfOrder: rb.shelfOrder,
+      lastPage: rb.lastPage,
+    });
+  }
+
+  // 本地有、云端没有——这本书从来没同步过（这个功能上线前就导入的老
+  // 书，或者上传时离线/失败了），悄悄补传一次。传完把本地记录的 id
+  // 换成云端分配的新 id，之后本地 id 和云端 id 就是同一个数了。
+  for (const lb of localBooks) {
+    if (remoteIds.has(lb.id) || lb.storagePath) continue;
+    try {
+      const storagePath = `${session.userId}/${crypto.randomUUID()}.${lb.type}`;
+      await sbUploadBookFile(storagePath, lb.fileBlob);
+      const newId = await sbCreateLibraryBook({
+        title: lb.title,
+        type: lb.type,
+        storagePath,
+        coverData: lb.coverData || null,
+        shelfOrder: lb.shelfOrder,
+        lastPage: lb.lastPage || 0,
+      });
+      // 先把新 id 的本地记录加成功，再删旧的——万一 addBookLocal 这步
+      // 出于任何原因失败（IndexedDB 报错等），旧记录还在，这本书不会
+      // 凭空消失，只是这次补传没生效，下次 getShelfBooks() 再试一次。
+      // 如果反过来先删再加，加失败就真的把本地文件弄丢了。
+      await addBookLocal({ ...lb, id: newId, storagePath });
+      await deleteBookLocal(lb.id);
+    } catch (err) {
+      console.warn(`书籍《${lb.title}》补传云端失败（本地正常使用不受影响）：`, err);
+    }
+  }
 }
 
 async function reorderBooks(draggedId, targetId) {
@@ -91,10 +185,16 @@ async function reorderBooks(draggedId, targetId) {
   if (fromIdx === -1 || toIdx === -1 || fromIdx === toIdx) return;
   const [moved] = books.splice(fromIdx, 1);
   books.splice(toIdx, 0, moved);
+  const session = sbGetSession();
   for (let i = 0; i < books.length; i++) {
     if (books[i].shelfOrder !== i) {
       books[i].shelfOrder = i;
       await updateBookLocal(books[i]);
+      if (session) {
+        sbUpdateLibraryBook(books[i].id, { shelfOrder: i }).catch((err) =>
+          console.warn("书架排序同步到云端失败（本地排序已生效）：", err)
+        );
+      }
     }
   }
 }
@@ -169,7 +269,6 @@ async function renderLibrary() {
   const books = await getShelfBooks();
   const grid = document.getElementById("bookGrid");
   const empty = document.getElementById("libraryEmpty");
-  revokeCoverUrls();
   if (books.length === 0) {
     grid.innerHTML = "";
     empty.style.display = "block";
@@ -178,16 +277,10 @@ async function renderLibrary() {
   empty.style.display = "none";
   grid.innerHTML = books
     .map((b) => {
-      const bgStyle = b.coverBlob
-        ? (() => {
-            const url = URL.createObjectURL(b.coverBlob);
-            coverObjectUrls.push(url);
-            return `background-image:url('${url}')`;
-          })()
-        : `background:${colorForTitle(b.title)}`;
+      const bgStyle = b.coverData ? `background-image:url('${b.coverData}')` : `background:${colorForTitle(b.title)}`;
       return `
-      <div class="bookSpine ${b.coverBlob ? "hasCover" : ""}" data-id="${b.id}" style="${bgStyle}">
-        <button class="bookCoverBtn" data-id="${b.id}" title="${b.coverBlob ? "更换封面" : "设置封面"}">🖼</button>
+      <div class="bookSpine ${b.coverData ? "hasCover" : ""}" data-id="${b.id}" style="${bgStyle}">
+        <button class="bookCoverBtn" data-id="${b.id}" title="${b.coverData ? "更换封面" : "设置封面"}">🖼</button>
         <button class="bookDeleteBtn" data-id="${b.id}" title="删除">✕</button>
         <div class="spineLabel" data-id="${b.id}">
           <span class="spineLabelText" data-id="${b.id}" data-orig="${escapeHtml(b.title)}" title="点击可重命名">${escapeHtml(b.title)}</span>
@@ -198,7 +291,14 @@ async function renderLibrary() {
   grid.querySelectorAll(".bookDeleteBtn").forEach((btn) => {
     btn.addEventListener("click", async (e) => {
       e.stopPropagation();
-      await deleteBookLocal(Number(btn.dataset.id));
+      const id = Number(btn.dataset.id);
+      const book = await getBookLocal(id);
+      await deleteBookLocal(id);
+      const session = sbGetSession();
+      if (session && book) {
+        sbDeleteLibraryBook(id).catch((err) => console.warn("云端书籍记录删除失败：", err));
+        if (book.storagePath) sbDeleteBookFile(book.storagePath).catch((err) => console.warn("云端书籍文件删除失败：", err));
+      }
       renderLibrary();
     });
   });
@@ -246,6 +346,8 @@ async function renderLibrary() {
       if (!book) return;
       book.title = newTitle;
       await updateBookLocal(book);
+      const session = sbGetSession();
+      if (session) sbUpdateLibraryBook(id, { title: newTitle }).catch((err) => console.warn("书名同步到云端失败：", err));
       span.dataset.orig = newTitle;
       toast("书名已更新");
     });
@@ -284,8 +386,20 @@ coverInput.addEventListener("change", async (e) => {
   }
   const book = await getBookLocal(bookId);
   if (!book) return;
-  book.coverBlob = file;
+  // 压缩成 base64 再存——跟生词本封面同一套处理，本地存的也是压缩后
+  // 的版本（不再存原始 File），这样才能顺带同步到云端的 text 字段。
+  let dataUri;
+  try {
+    dataUri = await compressImageToDataUri(file, 500, 0.82);
+  } catch (err) {
+    toast("封面处理失败：" + err.message);
+    return;
+  }
+  book.coverData = dataUri;
+  delete book.coverBlob;
   await updateBookLocal(book);
+  const session = sbGetSession();
+  if (session) sbUpdateLibraryBook(bookId, { coverData: dataUri }).catch((err) => console.warn("封面同步到云端失败：", err));
   toast("封面已更新");
   renderLibrary();
 });

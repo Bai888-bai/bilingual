@@ -17,12 +17,27 @@ function sbClearSession() {
   localStorage.removeItem(SB_SESSION_KEY);
 }
 
+// 书架同步的 Storage 路径要按 {user_id}/... 分文件夹（RLS 策略靠这个
+// 判断能不能读/写），所以 session 里需要留一份 user id。不依赖登录
+// 响应里刚好带没带 user 对象——直接解 access_token 这个 JWT 本身的
+// sub claim，sign-in 和 refresh 两种响应都保证有这个字段，比"猜
+// json.user.id 存不存在"更稳。
+function sbUserIdFromToken(accessToken) {
+  try {
+    const payload = accessToken.split(".")[1];
+    const json = JSON.parse(atob(payload.replace(/-/g, "+").replace(/_/g, "/")));
+    return json.sub || null;
+  } catch (e) {
+    return null;
+  }
+}
 function sbSessionFromAuthResponse(json, email) {
   return {
     access_token: json.access_token,
     refresh_token: json.refresh_token,
     expires_at: Date.now() + json.expires_in * 1000,
     email: email || (json.user && json.user.email) || null,
+    userId: sbUserIdFromToken(json.access_token),
   };
 }
 
@@ -160,6 +175,79 @@ async function sbDeleteWord(id) {
 async function sbUpdateWord(entry) {
   const body = { due: new Date(entry.due).toISOString(), interval_ms: entry.interval, ease: entry.ease };
   await sbRest(`/words?id=eq.${entry.id}`, { method: "PATCH", body: JSON.stringify(body), prefer: "return=minimal" });
+}
+
+// ---------------- 书架同步（library_books 表 + book-files 存储桶） ----------------
+// 表名特意不叫 books，跟上面生词本的 books 表分开；书本文件本体走
+// Storage，这里的行只存元信息 + 文件在桶里的路径。
+
+function sbMapLibraryBookFromRow(row) {
+  return {
+    id: row.id,
+    title: row.title,
+    type: row.type,
+    storagePath: row.storage_path,
+    coverData: row.cover_data || null,
+    addedAt: new Date(row.added_at).getTime(),
+    shelfOrder: row.shelf_order,
+    lastPage: row.last_page,
+  };
+}
+async function sbListLibraryBooks() {
+  const rows = await sbRest(`/library_books?select=*&order=shelf_order.asc`);
+  return rows.map(sbMapLibraryBookFromRow);
+}
+async function sbCreateLibraryBook({ title, type, storagePath, coverData, shelfOrder, lastPage }) {
+  const body = { title, type, storage_path: storagePath, shelf_order: shelfOrder || 0, last_page: lastPage || 0 };
+  if (coverData) body.cover_data = coverData;
+  const rows = await sbRest(`/library_books`, { method: "POST", body: JSON.stringify(body) });
+  return rows[0].id;
+}
+async function sbUpdateLibraryBook(id, patch) {
+  const body = {};
+  if (patch.title !== undefined) body.title = patch.title;
+  if (patch.coverData !== undefined) body.cover_data = patch.coverData;
+  if (patch.shelfOrder !== undefined) body.shelf_order = patch.shelfOrder;
+  if (patch.lastPage !== undefined) body.last_page = patch.lastPage;
+  await sbRest(`/library_books?id=eq.${id}`, { method: "PATCH", body: JSON.stringify(body), prefer: "return=minimal" });
+}
+async function sbDeleteLibraryBook(id) {
+  await sbRest(`/library_books?id=eq.${id}`, { method: "DELETE", prefer: "return=minimal" });
+}
+
+// Storage 走的是单独一套 REST 端点（/storage/v1/object/...），不是
+// PostgREST 的 /rest/v1，所以不能复用 sbRest，单独拼请求，但token/
+// apikey 的取法一样。
+async function sbUploadBookFile(path, file) {
+  const token = await sbGetValidAccessToken();
+  const resp = await fetch(`${SUPABASE_URL}/storage/v1/object/book-files/${path}`, {
+    method: "POST",
+    headers: {
+      apikey: SUPABASE_ANON_KEY,
+      Authorization: `Bearer ${token}`,
+      "Content-Type": file.type || "application/octet-stream",
+    },
+    body: file,
+  });
+  if (!resp.ok) {
+    const errJson = await resp.json().catch(() => ({}));
+    throw new Error(errJson.message || `STORAGE_UPLOAD_ERROR_${resp.status}`);
+  }
+}
+async function sbDownloadBookFile(path) {
+  const token = await sbGetValidAccessToken();
+  const resp = await fetch(`${SUPABASE_URL}/storage/v1/object/book-files/${path}`, {
+    headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${token}` },
+  });
+  if (!resp.ok) throw new Error(`STORAGE_DOWNLOAD_ERROR_${resp.status}`);
+  return resp.blob();
+}
+async function sbDeleteBookFile(path) {
+  const token = await sbGetValidAccessToken();
+  await fetch(`${SUPABASE_URL}/storage/v1/object/book-files/${path}`, {
+    method: "DELETE",
+    headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${token}` },
+  });
 }
 
 // ---------------- 查词（走 Edge Function 代理，不能直接调有道，见 supabase/functions/lookup） ----------------

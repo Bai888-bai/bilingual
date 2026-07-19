@@ -104,6 +104,24 @@ async function runReader() {
     loadingTextEl.textContent = "找不到这本书";
     return;
   }
+  // 这本书是从云端同步过来的占位记录（比如在另一台设备上传的），本机
+  // 还没有文件本体——先从 Supabase Storage 下载下来，存回本地当缓存，
+  // 下次在这台设备打开就不用再下载了。没登录或者下载失败就没法看这本
+  // 书，跟"找不到这本书"给同样的提示，不单独设计一套错误态。
+  if (!book.fileBlob) {
+    if (!sbGetSession() || !book.storagePath) {
+      loadingTextEl.textContent = "找不到这本书";
+      return;
+    }
+    loadingTextEl.textContent = "正在从云端下载书籍…";
+    try {
+      book.fileBlob = await sbDownloadBookFile(book.storagePath);
+      await updateBookLocal(book);
+    } catch (err) {
+      loadingTextEl.textContent = "从云端下载书籍失败：" + err.message;
+      return;
+    }
+  }
   titleEl.textContent = book.title;
   document.title = book.title + " - 中英阅读助手";
 
@@ -217,6 +235,14 @@ async function runReader() {
       book.lastPage = idx;
       book.lastOpenedAt = Date.now();
       updateBookLocal(book);
+      // 复用同一个 400ms 防抖，不用另起一个定时器——阅读进度同步失败
+      // 只打个警告，翻页手感不因为这个变卡（跟这次 session 里生词本
+      // scheduleWord 那次的容错方式一样）。
+      if (sbGetSession()) {
+        sbUpdateLibraryBook(bookId, { lastPage: idx }).catch((err) =>
+          console.warn("阅读进度同步到云端失败：", err)
+        );
+      }
     }, 400);
   }
 

@@ -286,29 +286,10 @@ function renderNotebookCarousel() {
 // 封面存的是 books 表里一个 text 字段（cover_data，data URI），不是
 // 接 Supabase Storage 的独立文件——上传前用 canvas 把图缩小压缩一下，
 // 不然手机拍的照片直接转 base64 动辄几 MB，塞数据库字段又慢又浪费。
+// compressImageToDataUri 这个函数挪到了 book-store.js（书架封面同步
+// 那次改动开始也要用同一个函数，book-store.js 加载顺序比 vocab.js
+// 早，两边都能安全调用，不用担心脚本加载顺序）。
 const notebookCoverInput = document.getElementById("notebookCoverInput");
-function compressImageToDataUri(file, maxSize, quality) {
-  return new Promise((resolve, reject) => {
-    const img = new Image();
-    const url = URL.createObjectURL(file);
-    img.onload = () => {
-      URL.revokeObjectURL(url);
-      const scale = Math.min(1, maxSize / Math.max(img.width, img.height));
-      const w = Math.round(img.width * scale);
-      const h = Math.round(img.height * scale);
-      const canvas = document.createElement("canvas");
-      canvas.width = w;
-      canvas.height = h;
-      canvas.getContext("2d").drawImage(img, 0, 0, w, h);
-      resolve(canvas.toDataURL("image/jpeg", quality));
-    };
-    img.onerror = () => {
-      URL.revokeObjectURL(url);
-      reject(new Error("图片加载失败"));
-    };
-    img.src = url;
-  });
-}
 notebookCoverInput.addEventListener("change", async (e) => {
   const file = e.target.files[0];
   const bookId = Number(notebookCoverInput.dataset.bookId);
