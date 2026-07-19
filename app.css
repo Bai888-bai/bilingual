@@ -138,37 +138,90 @@ main#pages { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; }
        一段实打实的阴影（板子有厚度，挡住了后面的光），再慢慢往下一层
        敞开的格子里淡出——纯两色硬边看着像裂缝，不像一块有厚度的木板。 */
     repeating-linear-gradient(to bottom,
-      transparent 0, transparent 194px,
-      rgba(255,236,198,0.6) 194px, rgba(255,236,198,0.6) 200px,
-      rgba(24,14,6,0.6) 200px, rgba(24,14,6,0.55) 208px,
-      rgba(24,14,6,0.22) 208px, rgba(24,14,6,0) 216px
+      transparent 0, transparent 193px,
+      rgba(255,236,198,0.65) 193px, rgba(255,236,198,0.65) 200px,
+      rgba(24,14,6,0.72) 200px, rgba(24,14,6,0.66) 209px,
+      rgba(24,14,6,0.28) 209px, rgba(24,14,6,0) 217px
     ),
     linear-gradient(180deg, #c99b5f, #a97c42 55%, #8a5f30);
   background-position: 0 0, 0 28px, 0 0;
-  box-shadow: inset 0 26px 30px -18px rgba(43,26,10,0.55);
+  /* 顶部内凹之外，四周再叠一圈暗角，让整个书架读成一个嵌在墙里的凹龛
+     （nook），不是浮在页面上的一块平贴纹理——景深感主要靠这圈暗角，
+     不是靠纹理本身。 */
+  box-shadow:
+    inset 0 26px 30px -18px rgba(43,26,10,0.55),
+    inset 46px 0 70px -55px rgba(15,9,4,0.6),
+    inset -46px 0 70px -55px rgba(15,9,4,0.6),
+    inset 0 -24px 34px -22px rgba(15,9,4,0.4);
 }
 .bookSpine {
   /* 书本身的高度比"一格"矮一点（190px 而不是到 200px 才到搁板高光），
      故意留出个小空隙——书底边贴近但不压住搁板前沿那条浅色高光，露出
      一点点亮边，才看得出"书立在板子前面"而不是书把整条板子的反光全
      挡住了。margin-bottom 相应多留一点，保证一格的总高度（书+间距）
-     还是跟背景搁板的重复周期对得上。 */
+     还是跟背景搁板的重复周期对得上。宽度收窄到标准书脊比例（42px），
+     不再是硬塞封面图进去的宽方块。 */
   position: relative; cursor: pointer; flex-shrink: 0;
-  width: 58px; height: 190px; margin-bottom: 26px;
-  border-radius: 3px 5px 5px 3px; background-size: cover; background-position: center;
-  box-shadow: 2px 6px 10px rgba(0,0,0,0.4), inset -8px 0 14px rgba(0,0,0,0.28), inset 2px 0 0 rgba(255,255,255,0.14);
-  transition: transform 0.15s ease;
+  width: 42px; height: 190px; margin-bottom: 26px;
+  border-radius: 3px 6px 6px 3px;
+  /* 背景色（皮革底色）由 app.js 按书名哈希内联指定，这里只叠三层
+     background-image：顶部烫金压纹双线、底部烫金压纹双线、圆柱面
+     明暗渐变（左右暗中间亮，模拟书脊微凸的弧面）——三层跟内联的
+     background-color 是不同属性，互不冲突，同一套技巧贯穿这次改版
+     用到的所有"纹理"（书架木纹、生词本轮播、笔记本内页都是这么做的）。 */
+  background-image:
+    linear-gradient(to bottom,
+      transparent 15px, rgba(224,190,110,0.85) 15px, rgba(224,190,110,0.85) 16px, transparent 16px,
+      transparent 19px, rgba(224,190,110,0.45) 19px, rgba(224,190,110,0.45) 19.6px, transparent 19.6px),
+    linear-gradient(to top,
+      transparent 15px, rgba(224,190,110,0.85) 15px, rgba(224,190,110,0.85) 16px, transparent 16px,
+      transparent 19px, rgba(224,190,110,0.45) 19px, rgba(224,190,110,0.45) 19.6px, transparent 19.6px),
+    linear-gradient(90deg,
+      rgba(0,0,0,0.5) 0%, rgba(255,255,255,0.1) 9%, rgba(255,255,255,0.24) 40%,
+      rgba(255,255,255,0.22) 58%, rgba(0,0,0,0.1) 82%, rgba(0,0,0,0.55) 100%);
+  box-shadow:
+    3px 8px 12px rgba(0,0,0,0.45),
+    inset -10px 0 16px rgba(0,0,0,0.3), inset 3px 0 0 rgba(255,255,255,0.16),
+    inset 0 0 0 1px rgba(0,0,0,0.35);
+  transition: transform 0.28s cubic-bezier(0.22, 1, 0.36, 1), box-shadow 0.28s cubic-bezier(0.22, 1, 0.36, 1);
 }
-.bookSpine:hover { transform: translateY(-10px) rotate(-1deg); z-index: 2; }
-.bookSpine.hasCover { background-color: #333; }
+/* "被提起来"的交互：往上、往前提离书架一段距离再轻微放大，z-index
+   顶到最高盖住左右邻居，投影同步从贴墙的紧凑暗影换成范围更大更柔的
+   悬空投影——两组数值（位移前/位移后）都在 transition 里，靠同一条
+   过渡曲线联动，不是分开各自动画。 */
+.bookSpine:hover {
+  transform: translateY(-18px) scale(1.05);
+  z-index: 6;
+  box-shadow:
+    0 10px 18px rgba(20,12,5,0.32), 0 34px 42px -12px rgba(20,12,5,0.55),
+    inset -10px 0 16px rgba(0,0,0,0.3), inset 3px 0 0 rgba(255,255,255,0.16),
+    inset 0 0 0 1px rgba(0,0,0,0.35);
+}
 .bookSpine.lifting { transition: transform 0.22s ease, opacity 0.22s ease; transform: translateY(-26px) scale(1.06) rotate(-2deg); opacity: 0; }
 /* 每本书自己再带一小片接触阴影，贴着书本体走、不依赖跟背景搁板线对不
    对得齐——不管背景那条线算得准不准，书底下总归有个"压在东西上"的
-   影子，视觉上就立住了，比单靠一条线更明确地说明"这本书站在架子上"。 */
+   影子，视觉上就立住了，比单靠一条线更明确地说明"这本书站在架子上"。
+   悬浮时书离墙面远了，这片阴影按理也该跟着变淡变虚，但那部分交给
+   .bookSpine:hover 自己的 box-shadow 负责"悬空大阴影"，这片小接触
+   阴影原地不动反而更真实——真实世界里书拿起来后，原来那个位置的
+   浅浅印子也不会突然消失。 */
 .bookSpine::after {
-  content: ""; position: absolute; left: 3px; right: 3px; bottom: -3px; height: 7px;
-  background: radial-gradient(ellipse at center, rgba(20,12,5,0.5), transparent 72%);
+  content: ""; position: absolute; left: 2px; right: 2px; bottom: -4px; height: 9px;
+  background: radial-gradient(ellipse at center, rgba(15,9,4,0.55), transparent 75%);
   pointer-events: none;
+}
+/* 书脊上竖排的书名——真皮书脊上烫金压印的效果：暖金色字，叠一层深色
+   下阴影（压进封面的凹陷感）+一层浅色上阴影+一圈很淡的暖光（烫金
+   反光）。固定宽度居中，比整条书脊窄，短标题居中好看；长标题超出
+   两列的部分靠 overflow:hidden 直接裁掉，不做省略号——真书脊遇到长
+   书名也是硬裁/换小字号，裁比努力塞出省略号更像真的。 */
+.spineTitle {
+  position: absolute; top: 22px; bottom: 24px; left: 50%; transform: translateX(-50%);
+  width: 32px; overflow: hidden; pointer-events: none;
+  writing-mode: vertical-rl; text-orientation: mixed; text-align: center;
+  font: 600 12px/1.4 var(--serif); letter-spacing: 1.5px;
+  color: #ecd8a3;
+  text-shadow: 0 1px 0 rgba(0,0,0,0.55), 0 -1px 0 rgba(255,241,204,0.2), 0 0 7px rgba(255,214,140,0.28);
 }
 
 /* 拖拽排序：抓起的书原地半透明占位，跟在指针后面飘的是一个克隆出来的

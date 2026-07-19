@@ -57,13 +57,17 @@ function colorForTitle(title) {
   return `hsl(${hue}, 42%, 30%)`;
 }
 
-// 封面图存在 IndexedDB 里是 Blob，渲染的时候现转成 object URL——上一轮
-// 渲染生成的 URL 用完要 revoke 掉，不然每次刷新书架都攒一批不会被回收
-// 的内存引用。
-let coverObjectUrls = [];
-function revokeCoverUrls() {
-  coverObjectUrls.forEach((u) => URL.revokeObjectURL(u));
-  coverObjectUrls = [];
+// 书脊改成"精装皮革书脊"设计后，不再直接拿封面图当书脊底图（会被压得
+// 很难看），改成从几种克制的高档皮革色里按书名哈希选一个——比
+// colorForTitle 那种任意色相的 hsl 更收敛，更像一整排真的精装书，而
+// 不是一排随机撞色的方块。单独起一个函数，不复用 colorForTitle，因为
+// 生词本轮播那边也在用 colorForTitle，不想这次书架改版牵连过去。
+const SPINE_LEATHER_COLORS = ["#2f4a3c", "#5c2430", "#1c2c46", "#6b4226", "#4a2f4f", "#37302a", "#2e4a54", "#5a3b1e"];
+function spineColorForTitle(title) {
+  let hash = 0;
+  const s = String(title || "");
+  for (let i = 0; i < s.length; i++) hash = (hash * 31 + s.charCodeAt(i)) | 0;
+  return SPINE_LEATHER_COLORS[Math.abs(hash) % SPINE_LEATHER_COLORS.length];
 }
 
 // 书架顺序是读者手动拖出来的，跟"什么时候导入的"（addedAt）没关系，
@@ -169,7 +173,6 @@ async function renderLibrary() {
   const books = await getShelfBooks();
   const grid = document.getElementById("bookGrid");
   const empty = document.getElementById("libraryEmpty");
-  revokeCoverUrls();
   if (books.length === 0) {
     grid.innerHTML = "";
     empty.style.display = "block";
@@ -178,15 +181,9 @@ async function renderLibrary() {
   empty.style.display = "none";
   grid.innerHTML = books
     .map((b) => {
-      const bgStyle = b.coverBlob
-        ? (() => {
-            const url = URL.createObjectURL(b.coverBlob);
-            coverObjectUrls.push(url);
-            return `background-image:url('${url}')`;
-          })()
-        : `background:${colorForTitle(b.title)}`;
       return `
-      <div class="bookSpine ${b.coverBlob ? "hasCover" : ""}" data-id="${b.id}" style="${bgStyle}">
+      <div class="bookSpine ${b.coverBlob ? "hasCover" : ""}" data-id="${b.id}" style="background-color:${spineColorForTitle(b.title)}">
+        <div class="spineTitle">${escapeHtml(b.title)}</div>
         <button class="bookCoverBtn" data-id="${b.id}" title="${b.coverBlob ? "更换封面" : "设置封面"}">🖼</button>
         <button class="bookDeleteBtn" data-id="${b.id}" title="删除">✕</button>
         <div class="spineLabel" data-id="${b.id}">
