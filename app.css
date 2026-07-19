@@ -384,6 +384,34 @@ main#pages { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; }
   letter-spacing: 0.3px; margin: 14px auto 4px; max-width: 300px; opacity: 0.85;
 }
 
+/* 翻开书本动画：浮层里放的是被点中卡片的一份克隆（vocab.js 里
+   cloneNode 出来，纹理/封面图/书名照搬），钉死在原卡片当时的屏幕
+   位置上，用 !important 覆盖 .notebookCard 自身那几条会打架的规则
+   （position/margin，以及 active/扇形两种状态各自的 transform）——
+   三条规则分别对齐优先级不如直接 !important 可靠，反正这份克隆只
+   活半秒多就整个从 DOM 移除，不用担心 !important 污染别处。 */
+.bookOpenOverlay { position: fixed; inset: 0; z-index: 9500; pointer-events: none; perspective: 1400px; }
+.bookOpenCover.notebookCard {
+  position: fixed !important; margin: 0 !important; z-index: 1;
+  transform-origin: left center !important; backface-visibility: hidden;
+  transition: transform 0.55s cubic-bezier(0.25, 1, 0.5, 1), opacity 0.5s ease 0.05s !important;
+  transform: scale(1) rotateY(0deg) !important; opacity: 1 !important; filter: none !important;
+}
+/* 绕左侧书脊（自身的左边缘，transform-origin 已经钉在那儿）往左翻开
+   180 度中的一部分（-150deg，比整整翻过去更像"掀开一角"），同时放大
+   （--open-scale 由 JS 按视口宽度算好，塞进内联样式变量），backface-
+   visibility:hidden 保证转过 90 度之后这份克隆自己就不可见了，正好
+   在这个时间点让位给已经淡入的真实词表页，不用额外去对时间点。 */
+.bookOpenCover.notebookCard.opening {
+  transform: scale(var(--open-scale, 1.8)) rotateY(-150deg) !important; opacity: 0 !important;
+}
+
+#vocabMain.bookRevealIn { animation: bookRevealIn 0.5s cubic-bezier(0.25, 1, 0.5, 1) both; }
+@keyframes bookRevealIn {
+  from { opacity: 0; transform: scale(0.95) translateY(8px); }
+  to { opacity: 1; transform: scale(1) translateY(0); }
+}
+
 .iconBtn {
   width: 34px; height: 34px; border-radius: 50%; border: none; background: var(--primary);
   color: #fff; font-size: 18px; line-height: 1; cursor: pointer; box-shadow: var(--shadow);
@@ -409,21 +437,46 @@ main#pages { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; }
 .panel { display: none; animation: fadeIn 0.25s ease; }
 .panel.active { display: block; }
 
-.wordList { display: flex; flex-direction: column; gap: 8px; }
-.wordRow {
-  display: flex; align-items: center; gap: 14px; background: var(--surface); border-radius: var(--radius-sm);
-  padding: 12px 14px; box-shadow: var(--shadow); transition: opacity 0.25s ease, transform 0.25s ease, box-shadow 0.15s ease;
+/* 词表不再是一堆各自独立的灰色圆角卡片，改成一整页连续的精装笔记
+   纸：左侧留出摘要线的位置，三层背景渐变分别负责"装订缝阴影"和
+   "红色双线"，都叠在同一个 background-image 上（跟 background-color
+   是两个属性，互不冲突），不用额外的 DOM 节点画线。单词之间不再靠
+   卡片间距分隔，改成每行底部一条极淡的虚线（横格纸感），最后一行
+   不留线，避免贴着页面下边缘还留一条多余的线。 */
+.wordList {
+  display: flex; flex-direction: column;
+  background-color: var(--surface);
+  background-image:
+    linear-gradient(90deg, rgba(0, 0, 0, 0.1), transparent 26px),
+    linear-gradient(90deg, transparent 37px, rgba(179, 38, 30, 0.34) 37px, rgba(179, 38, 30, 0.34) 38px, transparent 38px),
+    linear-gradient(90deg, transparent 41px, rgba(179, 38, 30, 0.16) 41px, rgba(179, 38, 30, 0.16) 42px, transparent 42px);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-lg);
+  padding: 6px 20px 6px 54px;
 }
-.wordRow:hover { box-shadow: var(--shadow-lg); }
+.wordRow {
+  display: flex; align-items: center; gap: 14px;
+  padding: 15px 0; border-bottom: 1px dashed rgba(43, 32, 21, 0.15);
+  transition: background 0.15s ease;
+}
+.wordRow:last-child { border-bottom: none; }
+.wordRow:hover { background: rgba(122, 46, 42, 0.04); }
 .wordMain { flex: 1; min-width: 0; }
 .wordHead { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
 .wordText { font-weight: 700; font-size: 16px; }
-.wordPhon { color: var(--text-muted); font-size: 12px; }
+.wordPhon { color: var(--text-muted); font-size: 12px; opacity: 0.75; }
 .wordTrans { color: var(--text-muted); font-size: 13px; margin-top: 4px; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
-.wordDate { color: var(--text-muted); font-size: 12px; white-space: nowrap; }
-.dueBadge { font-size: 11px; padding: 2px 8px; border-radius: 999px; white-space: nowrap; }
-.dueBadge.due { background: var(--warning-tint); color: var(--warning); }
-.dueBadge.ok { background: var(--success-tint); color: var(--success); }
+.wordDate { color: var(--text-muted); font-size: 12px; white-space: nowrap; opacity: 0.8; }
+/* 待复习/已掌握不再是实心色块，改成描边小标签 + 一个 currentColor 的
+   小圆点（::before），复古一点，也不会跟前面 posBadge 的斜体标签
+   在视觉重量上抢戏。 */
+.dueBadge {
+  font-size: 10px; padding: 1px 8px 1px 6px; border-radius: 999px; white-space: nowrap;
+  border: 1px solid; background: transparent; display: inline-flex; align-items: center; gap: 4px;
+}
+.dueBadge::before { content: ""; width: 5px; height: 5px; border-radius: 50%; background: currentColor; flex-shrink: 0; }
+.dueBadge.due { border-color: var(--warning); color: var(--warning); }
+.dueBadge.ok { border-color: var(--success); color: var(--success); }
 
 .speakBtn {
   border: none; background: transparent; color: var(--text-muted); cursor: pointer; font-size: 14px;
@@ -431,24 +484,28 @@ main#pages { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; }
   flex-shrink: 0; transition: background 0.15s ease, color 0.15s ease;
 }
 .speakBtn:hover { background: var(--primary-tint); color: var(--primary); }
+/* 词表这边的喇叭按钮换成了纤细线条 SVG（卡片复习翻面那颗 cardSpeakBtn
+   还是 emoji，没在这次改动范围内，两边共用 .speakBtn 类互不干扰，
+   只有真的带 svg 子节点时才会命中这条尺寸规则）。 */
+.speakBtn svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
 .cardSpeakBtn { position: absolute; top: 12px; right: 12px; font-size: 16px; }
 
 .explainChip { display: inline-flex; align-items: baseline; gap: 4px; }
 .explainItem { margin: 5px 0; }
 .explainRow { display: flex; align-items: baseline; gap: 6px; }
 .exampleText { color: var(--text-muted); font-size: 12px; font-style: italic; margin: 2px 0 0 4px; }
-.posBadge { flex-shrink: 0; font-size: 11px; font-weight: 700; padding: 1px 7px; border-radius: 5px; }
-.posBadge.pos-n { background: var(--primary-tint); color: var(--primary-dark); }
-.posBadge.pos-v { background: var(--success-tint); color: #16803d; }
-.posBadge.pos-adj { background: var(--warning-tint); color: #8a5605; }
-.posBadge.pos-adv { background: var(--adv-tint); color: var(--adv); }
-.posBadge.pos-other { background: var(--border); color: var(--text-muted); }
+/* 词性标签不再是几种颜色的实心方块（n./v./adj./adv. 各配一种色块，
+   一行词义里塞两三个很容易糊成一片彩色噪音），统一换成不带底色的
+   衬线斜体，颜色也统一成低调的 text-muted——用字体本身的"斜体感"
+   区分"这是个语法标注"，不用再靠颜色分类。 */
+.posBadge { flex-shrink: 0; font: italic 400 12px var(--serif); color: var(--text-muted); padding: 0; border-radius: 0; background: none; }
 .trashBtn {
   border: none; background: transparent; color: var(--text-muted); cursor: pointer; font-size: 16px;
   width: 30px; height: 30px; border-radius: 50%; display: flex; align-items: center; justify-content: center;
-  transition: background 0.15s ease, color 0.15s ease;
+  opacity: 0.3; transition: background 0.15s ease, color 0.15s ease, opacity 0.15s ease;
 }
-.trashBtn:hover { background: var(--danger-tint); color: var(--danger); }
+.wordRow:hover .trashBtn, .trashBtn:focus-visible { opacity: 1; }
+.trashBtn:hover { background: var(--danger-tint); color: var(--danger); opacity: 1; }
 
 .emptyState { text-align: center; color: var(--text-muted); margin: 60px 0; }
 .emptyIcon { font-size: 40px; margin-bottom: 8px; }

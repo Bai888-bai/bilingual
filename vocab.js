@@ -339,18 +339,53 @@ notebookTrack.addEventListener("click", async (e) => {
     centerCarouselOn(Array.prototype.indexOf.call(notebookTrack.children, cardEl), true);
     return;
   }
-  await openNotebook(Number(cardEl.dataset.id));
+  await openNotebook(Number(cardEl.dataset.id), cardEl);
 });
 window.addEventListener("resize", () => {
   if (vocabPicker.style.display !== "none") centerCarouselOn(carouselActiveIndex, false);
 });
 
-async function openNotebook(id) {
+// 翻开动画：克隆一份被点中的卡片本身（cloneNode 连纹理/封面图/书名/
+// 书签色块这些视觉细节全部照搬，不用重新拼一遍），把克隆体钉在原卡片
+// 当前屏幕位置上，再单独让这一份克隆体绕左边书脊转开、放大、淡出——
+// 跟真正的卡片、跟下面要显示的词表页完全解耦，动画阶段渲染的是克隆
+// 体，不会影响原卡片状态，动画结束直接清空浮层即可。
+const bookOpenOverlay = document.getElementById("bookOpenOverlay");
+function animateBookOpen(cardEl) {
+  const rect = cardEl.getBoundingClientRect();
+  const clone = cardEl.cloneNode(true);
+  clone.removeAttribute("id");
+  clone.classList.add("bookOpenCover");
+  clone.querySelector(".notebookCoverBtn")?.remove();
+  clone.style.left = rect.left + "px";
+  clone.style.top = rect.top + "px";
+  clone.style.width = rect.width + "px";
+  clone.style.height = rect.height + "px";
+  const scale = Math.min(3, (window.innerWidth * 0.86) / rect.width);
+  clone.style.setProperty("--open-scale", scale);
+  bookOpenOverlay.innerHTML = "";
+  bookOpenOverlay.appendChild(clone);
+  // 先强制回流一次，让浏览器先画出"贴在原卡片位置上"的起始帧，再切
+  // 换到目标 transform——不然浏览器可能把两帧合并成一步跳过去，没有
+  // 翻开的过渡感（这一步在真实浏览器里才看得出效果，这个项目的沙盒
+  // 预览环境里 transition 本身不会推进，只能校验目标态计算得对不对）。
+  void clone.offsetWidth;
+  clone.classList.add("opening");
+  setTimeout(() => {
+    if (bookOpenOverlay.contains(clone)) bookOpenOverlay.removeChild(clone);
+  }, 650);
+}
+
+async function openNotebook(id, sourceCardEl) {
   currentBookId = id;
   const book = vocabBooks.find((b) => b.id === id);
   document.getElementById("vocabBookName").textContent = book ? book.name : "";
+  if (sourceCardEl) animateBookOpen(sourceCardEl);
   vocabPicker.style.display = "none";
   vocabMain.style.display = "block";
+  vocabMain.classList.remove("bookRevealIn");
+  void vocabMain.offsetWidth;
+  vocabMain.classList.add("bookRevealIn");
   await loadWords();
   renderWordList();
 }
@@ -385,7 +420,7 @@ function renderWordList() {
           <div class="wordHead">
             <span class="wordText">${escapeHtml(w.word)}</span>
             <span class="wordPhon">${w.phonetic ? "/" + escapeHtml(w.phonetic) + "/" : ""}</span>
-            <button class="speakBtn" data-id="${w.id}" title="朗读">🔊</button>
+            <button class="speakBtn" data-id="${w.id}" title="朗读"><svg viewBox="0 0 24 24"><path d="M4 9.5v5h3.5l5 3.8V5.7l-5 3.8H4z"/><path d="M16 8.5a4.2 4.2 0 0 1 0 7"/><path d="M18.3 6.2a7.5 7.5 0 0 1 0 11.6"/></svg></button>
             <span class="dueBadge ${isDue ? "due" : "ok"}">${isDue ? "待复习" : "已掌握"}</span>
           </div>
           <div class="wordTrans">${
