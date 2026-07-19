@@ -19,7 +19,13 @@
 (function () {
   const LONG_PRESS_MS = 500;
   const MOVE_TOLERANCE = 6;
-  const SELECTABLE_CONTAINER = ".textLayer, .epubPage, .reflowPage";
+  // 划句选区的范围不能只框到单独一页自己的 .textLayer/.epubPage/
+  // .reflowPage——双页模式下左右两页是各自独立的容器，那样框会导致
+  // 没法从左页拖到右页。改成整个翻页容器 #flipbook（所有 .leaf 页面
+  // 的共同父级），Range API 本来就能跨任意 DOM 节点取文本，不需要
+  // 两个词在同一个"页容器"里；elementFromPoint 本身只会命中屏幕上
+  // 真实可见的元素，不会因为翻页库预加载了别的页面就选到看不见的内容。
+  const SELECTABLE_CONTAINER = "#flipbook";
   let downX = 0,
     downY = 0,
     startSpan = null,
