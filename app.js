@@ -121,7 +121,11 @@ async function getShelfBooks() {
       merged.sort((a, b) => a.shelfOrder - b.shelfOrder);
       return merged;
     } catch (err) {
+      // 除了 console.warn，这里额外弹一个 toast——排查这个功能是不是
+      // 正常工作，靠"打开控制台看报错"对不太熟浏览器开发者工具的人
+      // 不现实，弹出来才看得见（常见原因：SQL 迁移/Storage 桶还没建）。
       console.warn("书架云端同步失败（本地书架仍可正常使用）：", err);
+      toast("书架云端同步失败：" + err.message);
     }
   }
   books.sort((a, b) => a.shelfOrder - b.shelfOrder);
@@ -438,6 +442,11 @@ document.getElementById("signInBtn").addEventListener("click", async () => {
     document.getElementById("password").value = "";
     refreshAccountUI();
     toast("登录成功");
+    // 书架在页面刚加载、还没登录的时候就渲染过一次了（只显示本地书），
+    // 登录这一下不会让它自动重新去云端拉一次——不补这一句，"先打开网页
+    // 再去登录"这个最常见的路径下，书架永远不会触发云端同步/合并，
+    // 表现出来就是"登录了但是看不到任何同步的书"。
+    renderLibrary();
   } catch (err) {
     loginErrorEl.textContent = err.message;
   }
@@ -446,6 +455,7 @@ document.getElementById("signInBtn").addEventListener("click", async () => {
 signOutBtn.addEventListener("click", () => {
   sbSignOut();
   refreshAccountUI();
+  renderLibrary();
 });
 
 // ---------------- Service Worker ----------------
