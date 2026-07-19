@@ -263,7 +263,7 @@ function renderNotebookCarousel() {
       // 封面图会变成按原始尺寸平铺，不会铺满卡片。
       const bg = b.coverData ? `background-image:url('${b.coverData}')` : `background-color:${colorForTitle(b.name)}`;
       return `
-      <div class="notebookCard" data-id="${b.id}" style="--notebook-tag-color:${notebookTagColor(b.name)};${bg}">
+      <div class="notebookCard ${b.coverData ? "hasCover" : ""}" data-id="${b.id}" style="--notebook-tag-color:${notebookTagColor(b.name)};${bg}">
         <button class="notebookCoverBtn" data-id="${b.id}" title="${b.coverData ? "更换封面" : "设置封面"}">🖼</button>
         <div class="notebookName">${escapeHtml(b.name)}</div>
       </div>`;

@@ -22,6 +22,15 @@
   --safe-top: env(safe-area-inset-top, 0px);
   --safe-bottom: env(safe-area-inset-bottom, 0px);
   --serif: Georgia, "Songti SC", "PingFang SC", serif;
+  /* 毛玻璃组件（悬浮工具栏/悬浮胶囊导航）共用的一套配色，跟页面暖色调
+     背景同色系，只是透明度不同——不用另起一套冷色玻璃质感，不然跟
+     整体"复古纸张"调性打架。 */
+  --glass-bg: rgba(251, 245, 232, 0.6);
+  --glass-bg-strong: rgba(251, 245, 232, 0.78);
+  --glass-border: rgba(255, 255, 255, 0.5);
+  --glass-shadow: 0 10px 30px rgba(43, 32, 21, 0.18), 0 1px 0 rgba(255, 255, 255, 0.5) inset;
+  --dock-glow: rgba(122, 46, 42, 0.14);
+  --hint-warm: #6b5335;
 }
 
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
@@ -69,17 +78,36 @@ main#pages { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; }
    米黄色页面背景。 */
 #pageLibrary.page.active { display: flex; flex-direction: column; padding: 0; min-height: 100%; }
 
+/* 悬浮胶囊导航：不再是贴着屏幕底边、通栏一条线的传统 tab bar，四周
+   留出边距、圆角+毛玻璃+细描边，看起来像浮在页面上方的一枚胶囊，
+   跟页面背景之间用阴影拉开一点距离。 main#pages 仍然是正常文档流，
+   dock 也留在正常流里（不用 position:fixed），页面内容不会被它压住，
+   也不用另外算 safe-area 偏移量去补内容区的 padding。 */
 .tabBar {
-  display: flex; background: var(--surface); border-top: 1px solid var(--border);
-  padding-bottom: var(--safe-bottom); flex-shrink: 0;
+  display: flex; align-items: center; justify-content: space-around; gap: 2px;
+  background: var(--glass-bg-strong); border: 1px solid var(--glass-border);
+  box-shadow: var(--glass-shadow); backdrop-filter: blur(18px) saturate(160%);
+  -webkit-backdrop-filter: blur(18px) saturate(160%);
+  border-radius: 26px; margin: 0 14px calc(10px + var(--safe-bottom)); padding: 6px 8px;
+  flex-shrink: 0;
 }
 .tabBtn {
-  flex: 1; border: none; background: transparent; padding: 10px 4px 8px; cursor: pointer;
-  display: flex; flex-direction: column; align-items: center; gap: 3px;
-  color: var(--text-muted); font: inherit; font-size: 11px;
+  position: relative; flex: 1; border: none; background: transparent; padding: 8px 4px 7px; cursor: pointer;
+  display: flex; flex-direction: column; align-items: center; gap: 3px; border-radius: 18px;
+  color: var(--text-muted); font: inherit; font-size: 11px; transition: color 0.2s ease, background 0.25s ease;
 }
-.tabBtn .tabIcon { font-size: 21px; }
-.tabBtn.active { color: var(--primary); }
+.tabBtn .tabIcon { width: 22px; height: 22px; display: flex; align-items: center; justify-content: center; }
+.tabBtn .tabIcon svg { width: 100%; height: 100%; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+.tabBtn.active {
+  color: var(--primary);
+  background: radial-gradient(circle at 50% 32%, var(--dock-glow), transparent 72%);
+}
+/* 激活态的下划线提示，比"图标变色"再多一点确认感，跟顶部工具栏那种
+   毛玻璃胶囊的语言呼应起来——细、短、圆角，不抢眼。 */
+.tabBtn.active::after {
+  content: ""; position: absolute; bottom: 1px; left: 50%; transform: translateX(-50%);
+  width: 14px; height: 2px; border-radius: 2px; background: var(--primary); opacity: 0.85;
+}
 
 /* ---- 书架 ---- */
 .libraryEmpty { text-align: center; color: var(--text-muted); margin-top: 80px; }
@@ -241,15 +269,40 @@ main#pages { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; }
    小概率边缘情况。改用原生横向滚动 + scroll-snap-align 之后，滚动
    和点击是浏览器原生分得清清楚楚的两件事，不再需要自己猜"这算不算
    拖拽"，这一整类 bug 从根上不会再出现。 ---- */
-.vocabPickerActions { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
+/* 顶部工具栏：三个操作以前是各自悬空的圆按钮，散落在页面左上角，
+   现在收进一枚毛玻璃胶囊里，用 iconBtn 原本的圆形结构但去掉自己的
+   实心背景/阴影（外层胶囊已经有阴影了，按钮自己再叠一层显得又乱又
+   重）。只在 .vocabPickerActions 里覆盖 iconBtn，不影响生词表页头的
+   返回按钮等其它用到 iconBtn 的地方。 */
+.vocabPickerActions {
+  display: flex; align-items: center; gap: 4px; margin: 4px auto 14px; width: fit-content;
+  padding: 5px; border-radius: 999px;
+  background: var(--glass-bg); border: 1px solid var(--glass-border);
+  box-shadow: var(--glass-shadow); backdrop-filter: blur(14px) saturate(160%);
+  -webkit-backdrop-filter: blur(14px) saturate(160%);
+}
+.vocabPickerActions .iconBtn {
+  background: transparent; color: var(--primary); box-shadow: none; border: none;
+}
+.vocabPickerActions .iconBtn:hover { background: rgba(122, 46, 42, 0.12); transform: scale(1.06); }
+/* .ghost 变体原本自带一层实心 --surface 背景（跟 .iconBtn.ghost 撞了
+   同样的选择器优先级），这里选择器多带一层 .ghost 把优先级压过去，
+   不然还是实心背景，看不出玻璃胶囊里"透明图标按钮"的效果。 */
+.vocabPickerActions .iconBtn.ghost { background: transparent; border: none; color: var(--text-muted); }
+.vocabPickerActions .iconBtn.ghost:hover { background: rgba(122, 46, 42, 0.1); color: var(--primary); }
+
 .notebookStage {
-  flex: 1; min-height: 320px; display: flex; align-items: center;
-  overflow-x: auto; overflow-y: hidden; scroll-snap-type: x mandatory;
+  flex: 1; min-height: 320px; display: flex; align-items: center; position: relative;
+  overflow-x: auto; overflow-y: hidden; scroll-snap-type: x mandatory; perspective: 1200px;
   -webkit-overflow-scrolling: touch; scrollbar-width: none;
+  /* 一圈柔和的暖色光晕，固定在舞台中央（滚动内容会动，背景不跟着滚），
+     正好落在吸附居中的那本书后面，像给它打了盏聚光灯，弱化两侧再往
+     外的空间，带一点"电影感"而不只是平铺的卡片行。 */
+  background: radial-gradient(ellipse 46% 60% at 50% 50%, rgba(255, 232, 180, 0.4), transparent 72%);
 }
 .notebookStage::-webkit-scrollbar { display: none; }
 .notebookTrack {
-  display: flex; align-items: center;
+  display: flex; align-items: center; transform-style: preserve-3d;
   /* 左右各留半个"卡槽"宽度当 padding，滚动条第一张/最后一张卡片才能
      被滚到正中间——不然滚到头卡片还是贴在一边，中间对不齐。 */
   padding: 0 calc(50% - 87px);
@@ -258,14 +311,47 @@ main#pages { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; }
   flex-shrink: 0; width: 150px; height: 200px; margin: 0 24px;
   scroll-snap-align: center;
   border-radius: 10px 14px 14px 10px; position: relative;
-  box-shadow: 0 10px 22px rgba(43,26,10,0.3), inset 2px 0 0 rgba(255,255,255,0.22), inset -6px 0 12px rgba(0,0,0,0.18);
+  /* 三层递减的"叠页"投影（错开的实色描边+淡阴影），模拟本子底下还压
+     着好几张纸/前一本书脊——只用 box-shadow 叠层做，不用额外的 DOM
+     节点或图片。最后再加一层大而软的接触阴影负责"整体立在桌面上"，
+     跟 inset 那两层负责本子自身书脊厚度的阴影分开，互不干扰。 */
+  box-shadow:
+    3px 4px 0 -1px rgba(255, 253, 245, 0.85), 3px 4px 0 0 rgba(20, 12, 5, 0.16),
+    6px 8px 0 -1px rgba(255, 253, 245, 0.65), 6px 8px 0 0 rgba(20, 12, 5, 0.12),
+    0 16px 30px rgba(20, 12, 5, 0.38),
+    inset 2px 0 0 rgba(255, 255, 255, 0.22), inset -6px 0 12px rgba(0, 0, 0, 0.2);
   display: flex; align-items: flex-end; justify-content: center; text-align: center;
   padding: 16px 12px; box-sizing: border-box; user-select: none; background-size: cover; background-position: center;
   cursor: pointer;
   transition: transform 0.22s ease, opacity 0.22s ease, filter 0.22s ease;
-  transform: scale(0.82); opacity: 0.55; filter: saturate(0.75);
+  transform: scale(0.85) rotateY(14deg); opacity: 0.6; filter: blur(1.5px) saturate(0.7);
 }
-.notebookCard.active { transform: scale(1); opacity: 1; filter: none; z-index: 2; }
+/* 用不到额外的 JS 去判断"这本在中间那本的左边还是右边"——靠 CSS
+   的层叠顺序：先把所有非激活卡片统一定成 rotateY(14deg)（往右转，
+   露出左侧书脊那一面），再用「排在激活卡片后面的非激活卡片」这条
+   规则整体反向覆盖成 rotateY(-14deg)，源码顺序在后的规则赢，天然就
+   分出了"中间左边"和"中间右边"两种朝向，扇形排开的效果。 */
+.notebookCard.active ~ .notebookCard { transform: scale(0.85) rotateY(-14deg); }
+.notebookCard.active { transform: scale(1.06) rotateY(0deg); opacity: 1; filter: none; z-index: 2; }
+
+/* 纯色词书（没上传封面的）额外叠一层皮革/粗麻布质感的纹理——交叉
+   斜纹模拟布纹经纬，两个方向的柔光/暗角模拟皮革不均匀的光泽，全部
+   用渐变叠出来，不用额外下载纹理图。字体换成衬线体，文字压印效果
+   用双向 text-shadow（上方暗、下方一丝高光）模拟"字被压进封面"的
+   凹陷感，而不是浮在表面上的贴纸感。上传了封面的本子（.hasCover）
+   保持原来照片+粗体无衬线标题的样子，不套这层效果。 */
+.notebookCard:not(.hasCover) {
+  background-image:
+    repeating-linear-gradient(45deg, rgba(255, 255, 255, 0.05) 0 2px, transparent 2px 6px),
+    repeating-linear-gradient(-45deg, rgba(0, 0, 0, 0.09) 0 1px, transparent 1px 6px),
+    radial-gradient(circle at 32% 22%, rgba(255, 255, 255, 0.14), transparent 58%),
+    radial-gradient(circle at 72% 82%, rgba(0, 0, 0, 0.2), transparent 55%);
+  background-blend-mode: overlay, multiply, screen, multiply;
+}
+.notebookCard:not(.hasCover) .notebookName {
+  font-family: var(--serif); letter-spacing: 0.3px;
+  text-shadow: 0 -1px 1px rgba(0, 0, 0, 0.55), 0 1px 0 rgba(255, 255, 255, 0.16);
+}
 /* 本子中间偏上一条装订线的暗示，靠一道竖向渐变带出"本子有点厚度、
    左边是装订"的感觉，不用真的画线条那么生硬 */
 .notebookCard::before {
@@ -293,7 +379,10 @@ main#pages { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; }
   display: none; align-items: center; justify-content: center;
 }
 .notebookCard.active .notebookCoverBtn { display: flex; }
-.notebookHint { text-align: center; color: var(--text-muted); font-size: 12px; margin: 6px 0 2px; }
+.notebookHint {
+  text-align: center; color: var(--hint-warm); font: 14px/1.6 var(--serif);
+  letter-spacing: 0.3px; margin: 14px auto 4px; max-width: 300px; opacity: 0.85;
+}
 
 .iconBtn {
   width: 34px; height: 34px; border-radius: 50%; border: none; background: var(--primary);
@@ -482,5 +571,10 @@ button.primary:active { transform: scale(0.97); }
     --primary-tint: #3a2320; --success-tint: #16301f; --danger-tint: #3a1c1c; --warning-tint: #3a2e12;
     --adv-tint: #2c2038;
     --shadow: 0 8px 28px rgba(0,0,0,0.45); --shadow-lg: 0 16px 40px rgba(0,0,0,0.6);
+    --glass-bg: rgba(36, 29, 22, 0.6); --glass-bg-strong: rgba(36, 29, 22, 0.78);
+    --glass-border: rgba(255, 255, 255, 0.08);
+    --glass-shadow: 0 10px 30px rgba(0, 0, 0, 0.5), 0 1px 0 rgba(255, 255, 255, 0.05) inset;
+    --dock-glow: rgba(211, 138, 132, 0.16);
+    --hint-warm: #c2a789;
   }
 }
