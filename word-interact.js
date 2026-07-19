@@ -127,6 +127,33 @@
     true
   );
 
+  // 光挡 pointerdown 不够——翻页库（page-flip）自己单独注册了原生的
+  // touchstart（在它自己的 .stf__block 容器上）和 touchmove（在
+  // window 上），完全独立于 Pointer Events，是两条互不相干的事件流。
+  // 挡住 pointerdown 只解决了"长按弹出系统选词菜单"（那是靠鼠标事件/
+  // 手势识别触发的），拦不住翻页库自己的原生 touchstart——这也是为什么
+  // 长按查词修好了、但拖拽划句在触屏上还是会被当成翻页的原因（读了
+  // page-flip@2.0.7 的源码确认的，不是猜的：它的 touchstart 挂在
+  // .stf__block 上、touchmove 挂在 window 上）。这里在 document 的
+  // capture 阶段拦住 touchstart，事件到不了 .stf__block，翻页库那边
+  // 的 touchstart 处理函数根本不会被调用，后续 touchmove 那套连带着
+  // 也不会被激活。
+  document.addEventListener(
+    "touchstart",
+    (e) => {
+      if (e.target.closest && e.target.closest(".btr-w")) {
+        e.preventDefault();
+        e.stopPropagation();
+      }
+    },
+    // Chrome 对 document 级别的 touchstart/touchmove 监听默认当成
+    // passive（滚动性能优化），passive 监听里调用 preventDefault() 会
+    // 被浏览器静默忽略——必须显式传 passive:false 才真的生效。
+    // stopPropagation 本身不受 passive 影响（挡住翻页库靠的是它），但
+    // 顺手把 preventDefault 也修对，两个都不依赖运气。
+    { capture: true, passive: false }
+  );
+
   document.addEventListener(
     "pointermove",
     (e) => {
