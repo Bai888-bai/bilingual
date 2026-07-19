@@ -109,12 +109,19 @@ function sbMapWordFromRow(row) {
 }
 
 async function sbListBooks() {
-  const rows = await sbRest(`/books?select=id,name,created_at&order=created_at.asc`);
-  return rows.map((r) => ({ id: r.id, name: r.name, createdAt: new Date(r.created_at).getTime() }));
+  const rows = await sbRest(`/books?select=id,name,created_at,cover_data&order=created_at.asc`);
+  return rows.map((r) => ({ id: r.id, name: r.name, createdAt: new Date(r.created_at).getTime(), coverData: r.cover_data || null }));
 }
 async function sbCreateBook(name) {
   const rows = await sbRest(`/books`, { method: "POST", body: JSON.stringify({ name }) });
   return rows[0].id;
+}
+async function sbUpdateBookCover(bookId, coverDataUri) {
+  await sbRest(`/books?id=eq.${bookId}`, {
+    method: "PATCH",
+    body: JSON.stringify({ cover_data: coverDataUri }),
+    prefer: "return=minimal",
+  });
 }
 async function sbListWords(bookId) {
   const rows = await sbRest(`/words?book_id=eq.${bookId}&order=added_at.desc`);
