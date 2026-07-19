@@ -407,9 +407,11 @@ function renderWordList() {
   if (currentWords.length === 0) {
     list.innerHTML = "";
     empty.style.display = "block";
+    updateDueLabels();
     return;
   }
   empty.style.display = "none";
+  updateDueLabels();
   const now = Date.now();
   list.innerHTML = currentWords
     .map((w) => {
@@ -548,8 +550,22 @@ function dueFilter(words, onlyDue) {
   return words.filter((w) => (w.due || 0) <= now);
 }
 
+// "只复习到期单词"这几个字不解释算法就直接甩出来，用户不知道"到期"
+// 是啥、更不知道现在有几个词到期，只能勾上试一次才知道有没有东西可
+// 复习。补一个到期数量，"只看到期"变成"只看到期（3）"，不用先猜。
+// 卡片复习/默写复习两个 tab 共用同一份 currentWords，数字一样，各自
+// 更新自己的 label 就行，不用另外维护一份状态。
+function updateDueLabels() {
+  const n = dueFilter(currentWords, true).length;
+  const cardLabel = document.getElementById("onlyDueCardLabel");
+  const quizLabel = document.getElementById("onlyDueQuizLabel");
+  if (cardLabel) cardLabel.textContent = `只看到期（${n}）`;
+  if (quizLabel) quizLabel.textContent = `只看到期（${n}）`;
+}
+
 async function startCardSession() {
   await loadWords();
+  updateDueLabels();
   const onlyDue = document.getElementById("onlyDueCard").checked;
   cardQueue = shuffle(dueFilter(currentWords, onlyDue));
   cardIndex = 0;
@@ -693,13 +709,21 @@ function scheduleWord(w, grade) {
   w.interval = interval;
   w.ease = ease;
   w.due = Date.now() + interval;
-  return sbUpdateWord(w);
+  // 排期结果（w.due/interval/ease）已经在上面同步算完、本地状态已经是
+  // 对的了，剩下只是把它存回 Supabase——存的这步失败（离线/网络抖动/
+  // 登录过期）不该拖累本地体验：gradeCurrentCard 那边 await 了这个
+  // 返回值，如果这里直接把 sbUpdateWord 的 rejected promise 传出去，
+  // 网络一失败就会连"翻到下一张卡"都卡住，本地明明已经算好的进度也
+  // 显示不出来。这里 catch 掉，只打个警告，让调用方永远拿到一个会
+  // resolve 的 promise。
+  return sbUpdateWord(w).catch((e) => console.warn("生词复习排期保存到云端失败（本地这一轮的显示不受影响）：", e));
 }
 
 async function gradeCurrentCard(grade) {
   if (cardIndex >= cardQueue.length) return;
   const w = cardQueue[cardIndex];
   await scheduleWord(w, grade);
+  updateDueLabels();
   cardIndex++;
   setTimeout(renderCard, cardDrag.classList.contains("flyLeft") || cardDrag.classList.contains("flyRight") ? 360 : 0);
 }
@@ -720,6 +744,7 @@ let quizAnswered = false;
 
 async function startQuizSession() {
   await loadWords();
+  updateDueLabels();
   const onlyDue = document.getElementById("onlyDueQuiz").checked;
   quizQueue = shuffle(dueFilter(currentWords, onlyDue));
   quizIndex = 0;
@@ -802,6 +827,7 @@ function checkAnswer() {
     input.className = "wrong";
     scheduleWord(w, 0);
   }
+  updateDueLabels();
   document.getElementById("quizNext").style.display = "inline-block";
 }
 
