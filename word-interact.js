@@ -1,10 +1,32 @@
 // 全局事件委托：点击/长按/划词，对 PDF 文字层和 EPUB 正文里的 .btr-w
 // 一视同仁——两边的渲染方式完全不同，但产出的都是同样的 .btr-w 元素，
 // 这层交互逻辑不用关心是哪种书。
+//
+// 用的是 Pointer Events（不是 mousedown/mousemove/mouseup）：鼠标和
+// 触屏统一处理，跟 word-popup.js 自己的弹窗拖拽逻辑是同一套事件体系。
+// 换成 Pointer Events 顺带解决了两个问题：
+// 1. iPad 长按只出现系统原生选词高亮、不弹查词框——鼠标事件在触屏上是
+//    "补偿合成"出来的，长按选词这种系统级手势一旦介入，合成的鼠标事件
+//    经常根本不会正常派发，我们自己的 500ms 长按计时器等不到触发的
+//    机会。pointerdown 是原生的、不依赖合成，配合 reader.css 里对
+//    .textLayer/.epubPage/.reflowPage 的 user-select/touch-callout
+//    禁用，系统不会再抢先弹出选词菜单。
+// 2. 桌面端拖拽划句常被翻页库（page-flip，纯鼠标事件的第三方库）误判成
+//    "按住拖拽翻页"——pointerdown 命中 .btr-w 时调用 preventDefault()
+//    能从源头让浏览器不再合成后续的 mousedown 给翻页库，比原来只
+//    stopPropagation() 更彻底（stopPropagation 挡不住浏览器继续做
+//    这次交互本该有的其它副作用）。
 (function () {
   const LONG_PRESS_MS = 500;
   const MOVE_TOLERANCE = 6;
-  let downX = 0, downY = 0, pendingSpan = null, longPressTimer = null, longPressFired = false;
+  const SELECTABLE_CONTAINER = ".textLayer, .epubPage, .reflowPage";
+  let downX = 0,
+    downY = 0,
+    startSpan = null,
+    currentSpan = null,
+    dragging = false,
+    longPressTimer = null,
+    longPressFired = false;
 
   async function handleShortPress(span, x, y) {
     // 跟插件的"替换"模式一致：短按原地把单词换成中文，再短按一次换回
@@ -46,88 +68,120 @@
     }
   }
 
+  function clearSelectingHighlight(container) {
+    if (!container) return;
+    container.querySelectorAll(".btr-selecting").forEach((el) => el.classList.remove("btr-selecting"));
+  }
+
+  // 拖拽中途实时刷新高亮：起点 span 和当前指针下的 span 在同一个容器里
+  // 按 DOM 顺序找出下标范围，范围内的全部点亮——每次 move 都"先清空
+  // 再重新加"，逻辑简单，一页顶多几百个词，性能没问题。
+  function updateSelectingHighlight(container) {
+    clearSelectingHighlight(container);
+    if (!startSpan || !currentSpan || startSpan === currentSpan) return;
+    const spans = Array.from(container.querySelectorAll(".btr-w"));
+    const startIdx = spans.indexOf(startSpan);
+    const curIdx = spans.indexOf(currentSpan);
+    if (startIdx === -1 || curIdx === -1) return;
+    const [from, to] = startIdx < curIdx ? [startIdx, curIdx] : [curIdx, startIdx];
+    for (let i = from; i <= to; i++) spans[i].classList.add("btr-selecting");
+  }
+
+  function resetState() {
+    const container = startSpan && startSpan.closest(SELECTABLE_CONTAINER);
+    clearSelectingHighlight(container);
+    clearTimeout(longPressTimer);
+    startSpan = null;
+    currentSpan = null;
+    dragging = false;
+    longPressFired = false;
+  }
+
   document.addEventListener(
-    "mousedown",
+    "pointerdown",
     (e) => {
       longPressFired = false;
+      dragging = false;
       clearTimeout(longPressTimer);
       const span = e.target.closest && e.target.closest(".btr-w");
       downX = e.clientX;
       downY = e.clientY;
       if (span) {
-        // 阻止事件继续往下传：阅读器的翻页库自己也监听了 mousedown 来做
-        // "按住拖拽翻页"，不拦住的话点单词会被它误判成翻页手势。
+        // 从源头压住：既不让浏览器把这次触摸当成"长按选词"，也不让它
+        // 合成 mousedown 给翻页库（阅读器里的翻页库自己也全局监听
+        // mousedown 来做"按住拖拽翻页"，不拦住的话点单词会被它误判成
+        // 翻页手势）。
+        e.preventDefault();
         e.stopPropagation();
-        pendingSpan = span;
+        startSpan = span;
+        currentSpan = span;
         longPressTimer = setTimeout(() => {
           longPressFired = true;
           handleLongPress(span, e.clientX, e.clientY);
         }, LONG_PRESS_MS);
       } else {
-        pendingSpan = null;
+        startSpan = null;
+        currentSpan = null;
       }
     },
     true
   );
 
   document.addEventListener(
-    "mousemove",
+    "pointermove",
     (e) => {
-      if (pendingSpan && !longPressFired) {
-        if (Math.abs(e.clientX - downX) > MOVE_TOLERANCE || Math.abs(e.clientY - downY) > MOVE_TOLERANCE) {
-          clearTimeout(longPressTimer);
-        }
+      if (!startSpan || longPressFired) return;
+      if (!dragging) {
+        if (Math.abs(e.clientX - downX) <= MOVE_TOLERANCE && Math.abs(e.clientY - downY) <= MOVE_TOLERANCE) return;
+        // 移动超过容差才判定成"拖拽划句"，不是长按——取消长按计时器，
+        // 从这一刻开始进入拖拽高亮模式。
+        clearTimeout(longPressTimer);
+        dragging = true;
       }
+      e.preventDefault();
+      const container = startSpan.closest(SELECTABLE_CONTAINER);
+      if (!container) return;
+      const el = document.elementFromPoint(e.clientX, e.clientY);
+      const hitSpan = el && el.closest && el.closest(".btr-w");
+      // 手指/指针滑到词与词中间的空白、或者滑出了容器范围，找不到新的
+      // .btr-w 就沿用上一个有效值——不然选区会莫名其妙收缩或跳变。
+      if (hitSpan && container.contains(hitSpan)) currentSpan = hitSpan;
+      updateSelectingHighlight(container);
     },
     true
   );
 
-  document.addEventListener(
-    "mouseup",
-    (e) => {
-      clearTimeout(longPressTimer);
-      if (longPressFired) {
-        longPressFired = false;
-        pendingSpan = null;
-        return;
+  function finishGesture(e) {
+    clearTimeout(longPressTimer);
+    if (longPressFired) {
+      resetState();
+      return;
+    }
+    if (dragging && startSpan && currentSpan && currentSpan !== startSpan) {
+      const container = startSpan.closest(SELECTABLE_CONTAINER);
+      const spans = container ? Array.from(container.querySelectorAll(".btr-w")) : [];
+      const startIdx = spans.indexOf(startSpan);
+      const curIdx = spans.indexOf(currentSpan);
+      if (startIdx !== -1 && curIdx !== -1) {
+        const first = startIdx < curIdx ? startSpan : currentSpan;
+        const last = startIdx < curIdx ? currentSpan : startSpan;
+        // 用 Range 直接读起止两个词之间的真实 DOM 文本，标点和空格都是
+        // 原样带上的，不是简单地把几个词的 data-w 拼起来。
+        const range = document.createRange();
+        range.setStartBefore(first);
+        range.setEndAfter(last);
+        const text = range.toString().trim();
+        if (text) handleSentence(text, e.clientX, e.clientY);
       }
-      const sel = window.getSelection();
-      const selText = sel ? sel.toString().trim() : "";
-      const popupHost = document.getElementById(WP_POPUP_ID);
-      const selInsidePopup = popupHost && sel && sel.anchorNode && popupHost.contains(sel.anchorNode);
-      // 长按查词的手势本身，只要按住的 500ms 里手有一点点抖动（现实中
-      // 几乎必然），浏览器就会顺手在正文里原生选中一两个词——这个选区
-      // 点弹窗里的按钮/拖拽弹窗时未必会被浏览器自动清掉（点在 <button>
-      // 上不一定会清除页面别处的文字选区）。所以哪怕这次 mouseup 的
-      // e.target 明明是点在弹窗里，`sel` 读到的可能还是长按时残留的、
-      // 弹窗外的旧选区——只看 selInsidePopup（选区本身在不在弹窗内）
-      // 不够，还得看这次点击本身是不是发生在弹窗里，是的话无论选区是
-      // 什么都不该当成"划句子翻译"处理。
-      // e.target 是不是弹窗后代这个判断本身也不一定可靠（同页面还有
-      // 翻页库等脚本在跑），所以再加一层坐标兜底：只要这次点击的坐标
-      // 落在弹窗当前的可见范围内，也一律当成"点在弹窗里"处理。
-      let clickInsidePopupByCoords = false;
-      if (popupHost) {
-        const rect = popupHost.getBoundingClientRect();
-        clickInsidePopupByCoords =
-          typeof e.clientX === "number" &&
-          e.clientX >= rect.left &&
-          e.clientX <= rect.right &&
-          e.clientY >= rect.top &&
-          e.clientY <= rect.bottom;
-      }
-      const clickInsidePopup =
-        (popupHost && e.target && e.target.closest && popupHost.contains(e.target)) || clickInsidePopupByCoords;
-      if (selText && !selInsidePopup && !clickInsidePopup && /\s/.test(selText) && selText.split(/\s+/).length > 1) {
-        handleSentence(selText, e.clientX, e.clientY);
-        pendingSpan = null;
-        return;
-      }
-      if (pendingSpan && e.target.closest && e.target.closest(".btr-w") === pendingSpan) {
-        handleShortPress(pendingSpan, e.clientX, e.clientY);
-      }
-      pendingSpan = null;
-    },
-    true
-  );
+      resetState();
+      return;
+    }
+    if (startSpan && !dragging && e.target.closest && e.target.closest(".btr-w") === startSpan) {
+      handleShortPress(startSpan, e.clientX, e.clientY);
+    }
+    resetState();
+  }
+
+  document.addEventListener("pointerup", finishGesture, true);
+  document.addEventListener("pointercancel", () => resetState(), true);
 })();
