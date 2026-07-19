@@ -41,13 +41,23 @@
           </div>
         </div>
 
-        <div id="vocabMain" style="display:none">
-          <div class="vocabHeader">
-            <div class="select-wrap"><select id="bookSelect"></select></div>
+        <div id="vocabPicker" style="display:none">
+          <div class="vocabPickerActions">
             <button class="iconBtn" id="newBookBtn" title="新建词书">＋</button>
             <button class="iconBtn ghost" id="exportBtn" title="导出全部生词本备份">⭳</button>
             <button class="iconBtn ghost" id="importBtn" title="从备份文件导入">⭱</button>
             <input type="file" id="importFile" accept="application/json" style="display:none" />
+          </div>
+          <div class="notebookStage">
+            <div class="notebookTrack" id="notebookTrack"></div>
+          </div>
+          <div class="notebookHint">拖动切换，点击中间的本子打开</div>
+        </div>
+
+        <div id="vocabMain" style="display:none">
+          <div class="vocabHeader">
+            <button class="iconBtn ghost backBtn" id="vocabBackBtn" title="返回">←</button>
+            <div class="vocabBookName" id="vocabBookName"></div>
           </div>
 
           <nav class="tabs">

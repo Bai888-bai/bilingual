@@ -8,10 +8,11 @@
 
 let currentBookId = null;
 let currentWords = [];
+let vocabBooks = [];
 
 const vocabSignedOutGate = document.getElementById("vocabSignedOutGate");
+const vocabPicker = document.getElementById("vocabPicker");
 const vocabMain = document.getElementById("vocabMain");
-const bookSelect = document.getElementById("bookSelect");
 const vocabTabs = {
   manage: document.getElementById("tabManage"),
   card: document.getElementById("tabCard"),
@@ -74,8 +75,7 @@ document.getElementById("newBookBtn").addEventListener("click", async () => {
   if (!name) return;
   const id = await sbCreateBook(name);
   await refreshBooks(id);
-  await loadWords();
-  renderWordList();
+  renderNotebookCarousel();
   toast(`已创建词书「${name}」`);
 });
 
@@ -171,27 +171,160 @@ document.getElementById("importFile").addEventListener("change", async (e) => {
   }
 
   await refreshBooks(currentBookId);
-  await loadWords();
-  renderWordList();
+  renderNotebookCarousel();
+  if (vocabMain.style.display !== "none") {
+    await loadWords();
+    renderWordList();
+  }
   toast(`已导入 ${imported} 个单词${skipped ? `，跳过 ${skipped} 个已存在的` : ""}`);
 });
 
-// ---------------- 词书选择 ----------------
-async function refreshBooks(selectId) {
+// ---------------- 词书选择：本子轮播 ----------------
+// vocabBooks 是当前已知的词书列表，只在 refreshBooks 里更新——渲染/
+// 拖拽逻辑都读这个内存里的数组，不用每次交互都重新请求 Supabase。
+async function refreshBooks(preferId) {
   const books = await sbListBooks();
   if (books.length === 0) {
     const id = await sbCreateBook("默认词书");
     books.push({ id, name: "默认词书" });
   }
-  bookSelect.innerHTML = books.map((b) => `<option value="${b.id}">${escapeHtml(b.name)}</option>`).join("");
-  currentBookId = selectId && books.some((b) => b.id === selectId) ? selectId : books[0].id;
-  bookSelect.value = currentBookId;
+  vocabBooks = books;
+  currentBookId = preferId && books.some((b) => b.id === preferId) ? preferId : books[0].id;
+  return books;
 }
 
-bookSelect.addEventListener("change", async () => {
-  currentBookId = Number(bookSelect.value);
+// 跟书架 app.js 里的 colorForTitle 复用同一个哈希算法（同一个页面里
+// 两边共享全局作用域），颜色语言保持一致；书签色块额外做一个色相
+// 偏移，跟封面主色区分开。
+function notebookTagColor(title) {
+  let hash = 0;
+  const s = String(title || "") + "#tag";
+  for (let i = 0; i < s.length; i++) hash = (hash * 31 + s.charCodeAt(i)) | 0;
+  const hue = Math.abs(hash) % 360;
+  return `hsl(${hue}, 65%, 62%)`;
+}
+
+const notebookStage = document.querySelector(".notebookStage");
+const notebookTrack = document.getElementById("notebookTrack");
+let carouselActiveIndex = 0;
+
+function notebookCardWidth() {
+  const card = notebookTrack.querySelector(".notebookCard");
+  if (!card) return 0;
+  const style = getComputedStyle(card);
+  return card.offsetWidth + parseFloat(style.marginLeft) + parseFloat(style.marginRight);
+}
+
+// 把第 index 本对齐到轨道中间：轨道整体是一条横向排开的 flex 容器，
+// 用 translateX 把目标卡片的中心挪到 stage 可视区域的中心。
+function centerCarouselOn(index, animate) {
+  carouselActiveIndex = Math.max(0, Math.min(vocabBooks.length - 1, index));
+  const w = notebookCardWidth();
+  const stageW = notebookStage.clientWidth;
+  const offset = stageW / 2 - (carouselActiveIndex * w + w / 2);
+  notebookTrack.classList.toggle("snapping", !!animate);
+  notebookTrack.style.transform = `translateX(${offset}px)`;
+  notebookTrack.querySelectorAll(".notebookCard").forEach((el, i) => {
+    el.classList.toggle("active", i === carouselActiveIndex);
+  });
+}
+
+function renderNotebookCarousel() {
+  if (vocabBooks.length === 0) {
+    notebookTrack.innerHTML = "";
+    return;
+  }
+  const activeId = currentBookId;
+  notebookTrack.innerHTML = vocabBooks
+    .map(
+      (b) => `
+      <div class="notebookCard" data-id="${b.id}" style="--notebook-tag-color:${notebookTagColor(b.name)};background:${colorForTitle(b.name)}">
+        <div class="notebookName">${escapeHtml(b.name)}</div>
+      </div>`
+    )
+    .join("");
+  const idx = Math.max(0, vocabBooks.findIndex((b) => b.id === activeId));
+  // 不用等 requestAnimationFrame——刚插入 DOM 之后紧接着读
+  // offsetWidth（notebookCardWidth 内部会读）本身就会强制浏览器立刻
+  // 把布局算出来，不需要额外等一帧。用 rAF 之前在这个项目的沙盒环境
+  // 里测试时踩过坑：预览标签页永远 document.hidden===true，rAF 回调
+  // 根本不会触发，导致这里量出来的宽度和居中位置全都是初始值。
+  centerCarouselOn(idx, false);
+}
+
+// 拖拽逻辑：按住轨道跟手挪动（叠加在"已经对齐第几本"的基础偏移上），
+// 松手按位移方向 + 越过半张卡片宽度就近判定该停在哪一本，然后带
+// 动画对齐——不是自由滚动到哪停哪，是"要么回到原来那本，要么正好
+// 停在相邻一本"，这样中间永远稳稳停着一本完整的本子，不会卡在两本
+// 中间的缝隙上。
+let carouselDragging = false;
+let carouselDragStartX = 0;
+let carouselBaseOffset = 0;
+let carouselMoved = false;
+
+notebookStage.addEventListener("pointerdown", (e) => {
+  if (vocabBooks.length === 0) return;
+  carouselDragging = true;
+  carouselMoved = false;
+  carouselDragStartX = e.clientX;
+  const m = /translateX\(([-\d.]+)px\)/.exec(notebookTrack.style.transform || "");
+  carouselBaseOffset = m ? parseFloat(m[1]) : 0;
+  notebookTrack.classList.remove("snapping");
+  notebookStage.classList.add("dragging");
+  notebookStage.setPointerCapture(e.pointerId);
+});
+notebookStage.addEventListener("pointermove", (e) => {
+  if (!carouselDragging) return;
+  const dx = e.clientX - carouselDragStartX;
+  if (Math.abs(dx) > 4) carouselMoved = true;
+  notebookTrack.style.transform = `translateX(${carouselBaseOffset + dx}px)`;
+});
+function endCarouselDrag(e) {
+  if (!carouselDragging) return;
+  carouselDragging = false;
+  notebookStage.classList.remove("dragging");
+  const dx = e.clientX - carouselDragStartX;
+  const w = notebookCardWidth();
+  let targetIndex = carouselActiveIndex;
+  if (carouselMoved && w > 0) {
+    if (dx <= -w / 2) targetIndex = carouselActiveIndex + Math.round(Math.abs(dx) / w);
+    else if (dx >= w / 2) targetIndex = carouselActiveIndex - Math.round(Math.abs(dx) / w);
+  }
+  centerCarouselOn(targetIndex, true);
+}
+notebookStage.addEventListener("pointerup", endCarouselDrag);
+notebookStage.addEventListener("pointercancel", endCarouselDrag);
+
+notebookTrack.addEventListener("click", async (e) => {
+  if (carouselMoved) return; // 刚拖拽完的这次点击不算数，避免拖完误触打开
+  const cardEl = e.target.closest(".notebookCard");
+  if (!cardEl) return;
+  const idx = Array.prototype.indexOf.call(notebookTrack.children, cardEl);
+  if (idx !== carouselActiveIndex) {
+    // 点的不是中间那本——先把它对齐到中间，不直接打开，跟拖拽切换的
+    // 手感保持一致（点边上的本子只是"看一眼把它调过来"，不会手滑点开）
+    centerCarouselOn(idx, true);
+    return;
+  }
+  await openNotebook(Number(cardEl.dataset.id));
+});
+window.addEventListener("resize", () => {
+  if (vocabPicker.style.display !== "none") centerCarouselOn(carouselActiveIndex, false);
+});
+
+async function openNotebook(id) {
+  currentBookId = id;
+  const book = vocabBooks.find((b) => b.id === id);
+  document.getElementById("vocabBookName").textContent = book ? book.name : "";
+  vocabPicker.style.display = "none";
+  vocabMain.style.display = "block";
   await loadWords();
   renderWordList();
+}
+document.getElementById("vocabBackBtn").addEventListener("click", () => {
+  vocabMain.style.display = "none";
+  vocabPicker.style.display = "block";
+  centerCarouselOn(carouselActiveIndex, false);
 });
 
 async function loadWords() {
@@ -623,16 +756,22 @@ let vocabInited = false;
 async function initVocabIfNeeded() {
   const signedIn = !!sbGetSession();
   vocabSignedOutGate.style.display = signedIn ? "none" : "block";
-  vocabMain.style.display = signedIn ? "block" : "none";
-  if (!signedIn || vocabInited) return;
+  // 进生词本先看本子轮播，选中一本点开才进词表——vocabMain 这时候还
+  // 不显示，跟之前"一进来就直接是某本词书的词表"不一样。
+  vocabPicker.style.display = signedIn ? "block" : "none";
+  if (!signedIn) {
+    vocabMain.style.display = "none";
+    return;
+  }
+  if (vocabInited) return;
   try {
     await refreshBooks();
-    await loadWords();
-    renderWordList();
+    renderNotebookCarousel();
     vocabInited = true;
   } catch (err) {
     // 常见于 token 过期又刷新失败，登录态被清空了
     vocabSignedOutGate.style.display = "block";
+    vocabPicker.style.display = "none";
     vocabMain.style.display = "none";
   }
 }

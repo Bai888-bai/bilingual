@@ -216,19 +216,76 @@ main#pages { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; }
 /* ---- 生词本：移植自浏览器扩展 review.css，配色改用页面已有的暖色调
    变量，跟书架/我的页面统一。类名基本照搬，注意避开跟本文件已有的
    .page/.emptyState 之类同名类冲突（生词本这边没有复用那些名字）。 ---- */
-.vocabHeader { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 16px; }
-.select-wrap { position: relative; }
-.select-wrap::after {
-  content: "▾"; position: absolute; right: 12px; top: 50%; transform: translateY(-50%);
-  pointer-events: none; color: var(--text-muted); font-size: 12px;
-}
+.vocabHeader { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 16px; }
+.vocabHeader .backBtn { font-size: 18px; }
+.vocabBookName { font-size: 17px; font-weight: 700; color: var(--text); }
 #pageVocab select {
   appearance: none; -webkit-appearance: none; font: inherit; padding: 8px 30px 8px 14px; border-radius: 999px;
   border: 1px solid var(--border); background: var(--surface); cursor: pointer; color: var(--text);
   box-shadow: var(--shadow); min-width: 140px;
 }
 #pageVocab select:hover { border-color: var(--primary); }
-#pageVocab select#quizDirection { min-width: unset; padding: 6px 26px 6px 12px; font-size: 13px; }
+#pageVocab select#quizDirection {
+  appearance: none; -webkit-appearance: none; min-width: unset; padding: 6px 26px 6px 12px; font-size: 13px;
+  position: relative;
+}
+
+/* ---- 生词本本子选择：多个词书像摊在桌上的笔记本一样横向排开，拖动
+   切换到中间，点中间那本才打开——跟书架的哈希取色规则共用同一个
+   colorForTitle()，颜色语言保持一致，只是从"竖直书脊"换成"平放
+   本子"这个更贴近生词本气质的形态。 ---- */
+.vocabPickerActions { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
+.notebookStage {
+  position: relative; flex: 1; min-height: 260px; overflow: hidden;
+  display: flex; align-items: center;
+  /* 桌面质感：比书架浅一点的暖木色，衬托本子本身的颜色，不抢戏 */
+  background: radial-gradient(ellipse at center, rgba(255,255,255,0.25), transparent 70%),
+    linear-gradient(180deg, #e4d2ab, #d3ba85);
+  border-radius: var(--radius);
+  box-shadow: inset 0 4px 14px rgba(90,62,20,0.22);
+  margin: 6px 0;
+  touch-action: pan-y;
+  cursor: grab;
+}
+.notebookStage.dragging { cursor: grabbing; }
+.notebookTrack {
+  display: flex; align-items: center; will-change: transform;
+}
+.notebookTrack.snapping { transition: transform 0.28s cubic-bezier(0.22, 1, 0.36, 1); }
+.notebookCard {
+  flex-shrink: 0; width: 128px; height: 168px; margin: 0 14px;
+  border-radius: 10px 14px 14px 10px; position: relative;
+  box-shadow: 0 10px 22px rgba(43,26,10,0.3), inset 2px 0 0 rgba(255,255,255,0.22), inset -6px 0 12px rgba(0,0,0,0.18);
+  display: flex; align-items: flex-end; justify-content: center; text-align: center;
+  padding: 14px 10px; box-sizing: border-box; user-select: none;
+  transition: transform 0.22s ease, opacity 0.22s ease, filter 0.22s ease;
+  transform: scale(0.82); opacity: 0.55; filter: saturate(0.75);
+}
+.notebookCard.active { transform: scale(1); opacity: 1; filter: none; z-index: 2; }
+/* 本子中间偏上一条装订线的暗示，靠一道竖向渐变带出"本子有点厚度、
+   左边是装订"的感觉，不用真的画线条那么生硬 */
+.notebookCard::before {
+  content: ""; position: absolute; left: 0; top: 6px; bottom: 6px; width: 14px;
+  background: linear-gradient(90deg, rgba(0,0,0,0.22), transparent);
+  border-radius: 10px 0 0 10px;
+}
+/* 右上角一枚小书签色块，呼应参考图里那种彩色书签标签，颜色也从标题
+   哈希出来但取一个不同的色相偏移，跟封面主色区分开，不会糊成一片 */
+.notebookCard::after {
+  content: ""; position: absolute; top: -6px; right: 18px; width: 14px; height: 26px;
+  background: var(--notebook-tag-color, #fff);
+  clip-path: polygon(0 0, 100% 0, 100% 100%, 50% 78%, 0 100%);
+  box-shadow: 0 2px 4px rgba(0,0,0,0.25);
+}
+.notebookCard .notebookName {
+  color: #fff; font-weight: 700; font-size: 14px; line-height: 1.3; text-shadow: 0 1px 3px rgba(0,0,0,0.35);
+  display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; word-break: break-word;
+}
+.notebookCard .notebookMeta {
+  position: absolute; top: 10px; left: 14px; right: 14px; color: rgba(255,255,255,0.85); font-size: 11px; text-align: left;
+}
+.notebookCard.active .notebookName { cursor: pointer; }
+.notebookHint { text-align: center; color: var(--text-muted); font-size: 12px; margin: 6px 0 2px; }
 
 .iconBtn {
   width: 34px; height: 34px; border-radius: 50%; border: none; background: var(--primary);
