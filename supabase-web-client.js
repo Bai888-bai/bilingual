@@ -109,8 +109,19 @@ function sbMapWordFromRow(row) {
 }
 
 async function sbListBooks() {
-  const rows = await sbRest(`/books?select=id,name,created_at,cover_data&order=created_at.asc`);
-  return rows.map((r) => ({ id: r.id, name: r.name, createdAt: new Date(r.created_at).getTime(), coverData: r.cover_data || null }));
+  // cover_data 这一列要用户自己去 Supabase 后台手动跑迁移 SQL 才会
+  // 存在（我们这边没有权限直接改表结构）——用户可能还没跑，这时候
+  // select 里带上一个不存在的列，PostgREST 会直接报错，导致整个
+  // 词书列表都读不出来。先按"列存在"去查，报错了就退回不选这一列
+  // 重查一次，两种情况下都能正常列出词书，只是列还没加出来之前
+  // 封面会一直是空的（哈希取色兜底），不会真的报错崩掉。
+  try {
+    const rows = await sbRest(`/books?select=id,name,created_at,cover_data&order=created_at.asc`);
+    return rows.map((r) => ({ id: r.id, name: r.name, createdAt: new Date(r.created_at).getTime(), coverData: r.cover_data || null }));
+  } catch (err) {
+    const rows = await sbRest(`/books?select=id,name,created_at&order=created_at.asc`);
+    return rows.map((r) => ({ id: r.id, name: r.name, createdAt: new Date(r.created_at).getTime(), coverData: null }));
+  }
 }
 async function sbCreateBook(name) {
   const rows = await sbRest(`/books`, { method: "POST", body: JSON.stringify({ name }) });

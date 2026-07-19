@@ -802,10 +802,16 @@ async function initVocabIfNeeded() {
     renderNotebookCarousel();
     vocabInited = true;
   } catch (err) {
-    // 常见于 token 过期又刷新失败，登录态被清空了
-    vocabSignedOutGate.style.display = "block";
-    vocabPicker.style.display = "none";
-    vocabMain.style.display = "none";
+    if (err.message === "NOT_SIGNED_IN") {
+      // token 过期又刷新失败，登录态被清空了——这种才是真的要退回
+      // 登录页；其他报错（比如查询字段跟数据库表结构对不上）一律
+      // 显示成"没登录"会很误导人，明明登录着却让用户去重新登录。
+      vocabSignedOutGate.style.display = "block";
+      vocabPicker.style.display = "none";
+      vocabMain.style.display = "none";
+    } else {
+      vocabPicker.querySelector(".notebookHint").textContent = "生词本加载失败：" + err.message;
+    }
   }
 }
 // 每次点"生词本"标签页都检查一下登录状态——刚在"我的"标签页登录完
