@@ -23,6 +23,16 @@
     </div>
     <div class="expandHandle" id="expandHandle" title="展开工具栏">⌄</div>
 
+    <!-- 沉浸模式下顶部工具栏整个是隐藏的（.readerApp.immersive .readerTopBar
+         { display:none }），退出/加书签这两个最高频的操作不该逼着先展开
+         工具栏才能点到——两个浮在书页四角的圆按钮，沉浸模式下常驻显示。 -->
+    <button class="exitFab" id="exitFab" title="退出阅读">
+      <svg viewBox="0 0 24 24"><path d="M15 5 8 12l7 7" /></svg>
+    </button>
+    <button class="bookmarkFab" id="bookmarkFab" title="书签">
+      <svg viewBox="0 0 24 24"><path d="M6.5 3.5h11a1 1 0 0 1 1 1V21l-6.5-4-6.5 4V4.5a1 1 0 0 1 1-1z" /></svg>
+    </button>
+
     <div class="readerStage" id="readerStage">
       <div class="readerLoading" id="readerLoading">
         <div class="bookLoader" aria-hidden="true">
@@ -63,7 +73,6 @@
       <div class="sidePanelBody">
         <div class="sidePanelList active" id="chapterList" data-panel="chapter"></div>
         <div class="sidePanelList" id="bookmarkPanelBody" data-panel="bookmark">
-          <button class="bookmarkToggleBtn" id="bookmarkToggleBtn">＋ 在当前页加书签</button>
           <div id="bookmarkList"></div>
         </div>
         <div class="sidePanelList" id="noteList" data-panel="note"></div>

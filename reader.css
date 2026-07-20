@@ -222,6 +222,29 @@ body {
 }
 .pageIndicator input::-webkit-outer-spin-button, .pageIndicator input::-webkit-inner-spin-button { margin: 0; }
 
+/* 沉浸模式下浮在书页左上/右上角的两个圆按钮：退出阅读、给当前页加/
+   移除书签——沉浸模式把整条顶部工具栏都藏起来了，这两个最高频的操作
+   不该逼着先展开工具栏才能点到。非沉浸模式下顶部工具栏本来就展开
+   着（backBtn 已经在那露出来了），这两个浮标就不用再重复出现。 */
+.exitFab, .bookmarkFab {
+  display: none; position: fixed; top: calc(10px + var(--safe-top)); z-index: 25;
+  width: 36px; height: 36px; border-radius: 50%; border: none;
+  background: rgba(43,32,21,0.55); color: #ede1c8; cursor: pointer;
+  align-items: center; justify-content: center; backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
+  transition: background 0.15s ease;
+}
+.exitFab:hover, .bookmarkFab:hover { background: rgba(43,32,21,0.75); }
+.exitFab { left: calc(10px + var(--safe-left, 0px)); }
+.bookmarkFab { right: calc(10px + var(--safe-right, 0px)); }
+.readerApp.immersive .exitFab, .readerApp.immersive .bookmarkFab { display: flex; }
+.exitFab svg, .bookmarkFab svg {
+  width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.8;
+  stroke-linecap: round; stroke-linejoin: round;
+}
+/* 书签图标默认只描边（空心丝带），当前页已经收藏了就填色，一眼看出
+   有没有收藏，不用像之前那样读按钮上的文字。 */
+.bookmarkFab.active svg { fill: #e0503a; stroke: #e0503a; }
+
 /* 侧边栏：章节列表 + 精确跳页，从右边滑出，跟工具栏收起/展开是两码事——
    沉浸模式下也能点右边那个小竖条把它叫出来，不需要先展开工具栏。 */
 .sidePanelTab {
@@ -278,12 +301,6 @@ body {
 .chapterList .chapterItem:hover { background: #f3ead6; }
 .chapterList .chapterEmpty, .bookmarkEmpty, .noteEmpty { padding: 16px; font-size: 12px; color: #a3937a; }
 
-.bookmarkToggleBtn {
-  display: block; width: calc(100% - 24px); margin: 10px 12px; padding: 8px; border-radius: 999px;
-  border: 1.5px solid #8a5a1f; background: transparent; color: #8a5a1f; font: inherit; font-weight: 600;
-  cursor: pointer;
-}
-.bookmarkToggleBtn.active { background: #8a5a1f; color: #fff; }
 .bookmarkItem, .noteItem {
   display: flex; align-items: flex-start; gap: 8px; padding: 9px 16px; border-bottom: 1px solid #f1e9d8;
 }

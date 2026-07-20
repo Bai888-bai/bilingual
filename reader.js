@@ -44,7 +44,8 @@ async function runReader() {
   const sidePanelTitleEl = document.getElementById("sidePanelTitle");
   const sidePanelTabsEl = document.getElementById("sidePanelTabs");
   const chapterListEl = document.getElementById("chapterList");
-  const bookmarkToggleBtn = document.getElementById("bookmarkToggleBtn");
+  const exitFab = document.getElementById("exitFab");
+  const bookmarkFab = document.getElementById("bookmarkFab");
   const bookmarkListEl = document.getElementById("bookmarkList");
   const noteListEl = document.getElementById("noteList");
   const readerAppEl = document.querySelector(".readerApp");
@@ -55,9 +56,40 @@ async function runReader() {
   let bookmarks = [];
   let notes = [];
 
-  document.getElementById("backBtn").addEventListener("click", () => {
+  async function exitReader() {
+    await flushProgress();
     location.href = "index.html";
+  }
+  document.getElementById("backBtn").addEventListener("click", exitReader);
+  // 沉浸模式下浮在左上角的退出按钮——顶部工具栏整条都是 display:none，
+  // 原来的 backBtn 点不到，得单独接一个。
+  exitFab.addEventListener("click", exitReader);
+  // 退到后台/切标签页也当成"要离开了"处理——不是所有人都是点返回键
+  // 退出的，划走 App、锁屏、切到别的标签页都可能再也不会回到这个页面，
+  // 不 flush 的话这次的阅读进度就丢了。visibilitychange 没法 await
+  // （浏览器不会等这个回调跑完才真的切走），只能是尽力而为，但比完全
+  // 不管强。
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden) flushProgress();
   });
+  // 退出阅读器之前，把防抖计时器里还没来得及落盘的那次进度立刻存掉
+  // ——不然翻完最后几页马上点返回，400ms 的防抖还没触发就已经跳转到
+  // 书架页了，这几页的进度全部丢失，退出来看到的会是稍早之前存的那次
+  // 进度，不是真正停留的那一页（这是真实的 bug，不是猜的：用户反馈
+  // "退出再进去页数会往前几页，不固定"，正好符合"防抖没来得及触发"
+  // 这个特征——差几页、每次不一样）。书本身还没加载完（pageFlip/book
+  // 还没赋值）的时候点退出，直接跳过保存，不阻塞正常退出。
+  function flushProgress() {
+    try {
+      clearTimeout(saveTimer);
+      const idx = pageFlip.getCurrentPageIndex();
+      book.lastPage = idx;
+      book.lastOpenedAt = Date.now();
+      return updateBookLocal(book);
+    } catch (err) {
+      return Promise.resolve();
+    }
+  }
 
   // 沉浸模式默认就是开着的——打开书直接给最大阅读区域，不用先看一眼
   // 工具栏晃一下再等它收起去。双击书页会把工具栏叫出来，再双击收回去。
@@ -418,10 +450,16 @@ async function runReader() {
   async function refreshBookmarks() {
     if (!sbGetSession()) {
       bookmarkListEl.innerHTML = `<div class="bookmarkEmpty">登录后才能使用书签</div>`;
-      bookmarkToggleBtn.style.display = "none";
+      // 用 !important 覆盖掉，不是简单 display:none——这个按钮默认的
+      // 显示/隐藏是靠 .readerApp.immersive 那条 CSS 规则控制的，行内
+      // style 一旦设成具体值（哪怕之后想清空成 ""）都会一直压着那条
+      // 规则，沉浸模式再怎么切都不会重新显示。这里明确知道"没登录就是
+      // 不该显示"，直接用行内样式盖过去没问题；signed-in 分支要记得
+      // 把行内样式清空还给 CSS 规则决定，不能漏。
+      bookmarkFab.style.display = "none";
       return;
     }
-    bookmarkToggleBtn.style.display = "block";
+    bookmarkFab.style.display = "";
     try {
       bookmarks = await sbListBookmarks(bookId);
     } catch (err) {
@@ -460,22 +498,24 @@ async function runReader() {
       bookmarkListEl.appendChild(row);
     }
   }
+  // 书签图标本身就是状态指示——填色代表当前页已经收藏了，空心代表还
+  // 没有，不用再另外找地方显示文字。
   function updateBookmarkToggleBtn() {
     if (!sbGetSession()) return;
     const idx = pageFlip.getCurrentPageIndex();
     const existing = bookmarks.find((b) => b.page === idx);
-    bookmarkToggleBtn.classList.toggle("active", !!existing);
-    bookmarkToggleBtn.textContent = existing ? "− 移除本页书签" : "＋ 在当前页加书签";
-    bookmarkToggleBtn.dataset.existingId = existing ? existing.id : "";
+    bookmarkFab.classList.toggle("active", !!existing);
+    bookmarkFab.title = existing ? "移除本页书签" : "在当前页加书签";
+    bookmarkFab.dataset.existingId = existing ? existing.id : "";
   }
-  bookmarkToggleBtn.addEventListener("click", async () => {
+  bookmarkFab.addEventListener("click", async () => {
     if (!sbGetSession()) {
       showToast("登录后才能使用书签");
       return;
     }
     const idx = pageFlip.getCurrentPageIndex();
-    const existingId = bookmarkToggleBtn.dataset.existingId;
-    bookmarkToggleBtn.disabled = true;
+    const existingId = bookmarkFab.dataset.existingId;
+    bookmarkFab.disabled = true;
     try {
       if (existingId) {
         await sbDeleteBookmark(Number(existingId));
@@ -490,7 +530,7 @@ async function runReader() {
     } catch (err) {
       showToast("书签操作失败：" + err.message);
     } finally {
-      bookmarkToggleBtn.disabled = false;
+      bookmarkFab.disabled = false;
     }
   });
   refreshBookmarks();
