@@ -268,20 +268,59 @@ async function sbDeleteBookmark(id) {
 }
 
 // ---------------- 划句笔记（notes 表） ----------------
+// notes 不再按"哪本书"自动分类，改成挂在用户自己建的笔记本
+// （notebooks 表）下面——book_id/page 还留着，只是从"分类依据"变成
+// "这条笔记是读哪本书哪一页的时候记的"这个上下文信息，跳转用得上。
 
 function sbMapNoteFromRow(row) {
-  return { id: row.id, bookId: row.book_id, page: row.page, quote: row.quote, comment: row.comment, createdAt: new Date(row.created_at).getTime() };
+  return {
+    id: row.id,
+    bookId: row.book_id,
+    notebookId: row.notebook_id,
+    page: row.page,
+    quote: row.quote,
+    comment: row.comment,
+    createdAt: new Date(row.created_at).getTime(),
+    bookTitle: row.library_books ? row.library_books.title : null,
+  };
 }
+// 阅读器侧边栏"笔记" tab 用——按书查，不管归到了哪个笔记本，看的是
+// "这本书我记过哪些笔记"。
 async function sbListNotes(bookId) {
   const rows = await sbRest(`/notes?book_id=eq.${bookId}&order=page.asc`);
   return rows.map(sbMapNoteFromRow);
 }
-async function sbAddNote(bookId, page, quote, comment) {
-  const rows = await sbRest(`/notes`, { method: "POST", body: JSON.stringify({ book_id: bookId, page, quote, comment }) });
+// 主界面"笔记本"视图用——按笔记本查，跨书汇总在一起；用 PostgREST 的
+// 关联查询语法顺带把书名带出来（notes.book_id 有外键指到
+// library_books，不用另外拉一次列表再手动拼）。
+async function sbListNotesByNotebook(notebookId) {
+  const rows = await sbRest(`/notes?notebook_id=eq.${notebookId}&select=*,library_books(title)&order=created_at.desc`);
+  return rows.map(sbMapNoteFromRow);
+}
+async function sbAddNote(bookId, page, quote, comment, notebookId) {
+  const body = { book_id: bookId, page, quote, comment, notebook_id: notebookId };
+  const rows = await sbRest(`/notes`, { method: "POST", body: JSON.stringify(body) });
   return rows[0].id;
 }
 async function sbDeleteNote(id) {
   await sbRest(`/notes?id=eq.${id}`, { method: "DELETE", prefer: "return=minimal" });
+}
+
+// ---------------- 笔记本（notebooks 表） ----------------
+
+function sbMapNotebookFromRow(row) {
+  return { id: row.id, name: row.name, createdAt: new Date(row.created_at).getTime() };
+}
+async function sbListNotebooks() {
+  const rows = await sbRest(`/notebooks?select=*&order=created_at.asc`);
+  return rows.map(sbMapNotebookFromRow);
+}
+async function sbCreateNotebook(name) {
+  const rows = await sbRest(`/notebooks`, { method: "POST", body: JSON.stringify({ name }) });
+  return rows[0].id;
+}
+async function sbDeleteNotebook(id) {
+  await sbRest(`/notebooks?id=eq.${id}`, { method: "DELETE", prefer: "return=minimal" });
 }
 
 // ---------------- 查词（走 Edge Function 代理，不能直接调有道，见 supabase/functions/lookup） ----------------

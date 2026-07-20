@@ -33,6 +33,11 @@
       </section>
 
       <section id="pageVocab" class="page">
+        <!-- 生词本 / 笔记本 共用这一个底部 tab 的位置，点顶部标题在两者
+             之间切换（vocab.js 里的 switchVocabPageMode），不用另外占
+             一个底部导航格子。这个 div 包住原来生词本的全部内容，方便
+             整体一起淡出/淡入。 -->
+        <div id="vocabModeRoot">
         <div id="vocabSignedOutGate" style="display:none">
           <div class="comingSoon">
             <div class="icon">🔒</div>
@@ -141,6 +146,53 @@
             <div class="modalActions">
               <button id="modalCancel">取消</button>
               <button class="primary" id="modalConfirm">创建</button>
+            </div>
+          </div>
+        </div>
+        </div>
+
+        <!-- 笔记本：跟生词本同一套"本子轮播选中间那本打开"的交互，只是
+             笔记不再按书自动分类，改成挂在这里自己建的笔记本下面。 -->
+        <div id="notebookModeRoot" style="display:none">
+          <div id="notebookSignedOutGate" style="display:none">
+            <div class="comingSoon">
+              <div class="icon">🔒</div>
+              <div>还没有登录</div>
+              <div class="hint">笔记存在云端，去"我的"标签页登录后就能看到</div>
+            </div>
+          </div>
+
+          <div id="noteNotebookPicker" style="display:none">
+            <div class="vocabPickerActions">
+              <button class="iconBtn" id="newNoteNotebookBtn" title="新建笔记本">＋</button>
+            </div>
+            <div class="notebookStage" id="noteNotebookStage">
+              <div class="notebookTrack" id="noteNotebookTrack"></div>
+            </div>
+            <div class="notebookHint">左右滑动切换，点击中间的本子打开</div>
+          </div>
+
+          <div id="noteNotebookMain" style="display:none">
+            <div class="vocabHeader">
+              <button class="iconBtn ghost backBtn" id="noteNotebookBackBtn" title="返回">←</button>
+              <div class="vocabBookName" id="noteNotebookName"></div>
+            </div>
+            <div class="wordList" id="noteRowList"></div>
+            <div id="noteRowEmpty" class="emptyState" style="display:none">
+              <div class="emptyIcon">📭</div>
+              <div>这个笔记本还没有笔记</div>
+              <div class="emptyHint">阅读的时候划选一段话，选"记笔记"就能存进来</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="modalOverlay" id="notebookModalOverlay">
+          <div class="modal">
+            <h3>新建笔记本</h3>
+            <input type="text" id="newNotebookInput" placeholder="笔记本名称" maxlength="30" />
+            <div class="modalActions">
+              <button id="notebookModalCancel">取消</button>
+              <button class="primary" id="notebookModalConfirm">创建</button>
             </div>
           </div>
         </div>

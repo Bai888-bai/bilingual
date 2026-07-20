@@ -59,6 +59,23 @@ body {
   background: linear-gradient(90deg, transparent, var(--primary), transparent); opacity: 0.35;
 }
 .topBar h1 { font: 700 20px var(--serif); margin: 0; letter-spacing: 0.5px; }
+/* 生词本页里，标题本身兼职当"生词本/笔记本"的切换按钮——只有在这个
+   tab 上才有意义，其它 tab 下点标题不做任何事，class 由 vocab.js 在
+   切 tab 的时候一起维护。 */
+.topBar h1.clickable { cursor: pointer; }
+.topBar h1.clickable:active { opacity: 0.7; }
+
+/* 生词本/笔记本互相切换的过渡动画：先淡出+轻微下沉，切完内容再淡入+
+   回位，不是硬切换。这个沙盒预览环境里 document.hidden 恒为 true，
+   过渡动画本身在这测不出实际播放效果，只能验证 class 加/删对不对、
+   最终显示状态对不对。 */
+#vocabModeRoot, #notebookModeRoot { transition: opacity 0.18s ease, transform 0.18s ease; }
+#vocabModeRoot.modeFadeOut, #notebookModeRoot.modeFadeOut { opacity: 0; transform: translateY(6px); }
+#vocabModeRoot.modeFadeIn, #notebookModeRoot.modeFadeIn { animation: modeFadeIn 0.22s ease; }
+@keyframes modeFadeIn {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
 .topBarAction {
   border: none; background: var(--primary); color: #fff; width: 34px; height: 34px; border-radius: 50%;
   font-size: 18px; cursor: pointer; display: flex; align-items: center; justify-content: center;
@@ -494,6 +511,13 @@ main#pages { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; }
 .wordPhon { color: var(--text-muted); font-size: 12px; opacity: 0.75; }
 .wordTrans { color: var(--text-muted); font-size: 13px; margin-top: 4px; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .wordDate { color: var(--text-muted); font-size: 12px; white-space: nowrap; opacity: 0.8; }
+
+/* 笔记本列表：复用 .wordRow/.wordList 那张"笔记纸"外观，笔记自己的
+   三行内容（书名+页码 / 摘录 / 感想）单独定几个 class。 */
+.noteRow .wordMain { cursor: pointer; }
+.noteBookTitle { color: var(--text-muted); font-size: 12px; }
+.noteQuote { font-style: italic; color: var(--text-muted); font-size: 13px; margin: 4px 0; }
+.noteComment { color: var(--text); font-size: 14px; }
 /* 待复习/已掌握不再是实心色块，改成描边小标签 + 一个 currentColor 的
    小圆点（::before），复古一点，也不会跟前面 posBadge 的斜体标签
    在视觉重量上抢戏。 */

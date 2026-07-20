@@ -860,3 +860,268 @@ async function initVocabIfNeeded() {
 // 切过来，或者 token 过期被清掉了，都能立刻反映出来，不用刷新整个页面。
 document.querySelector('.tabBtn[data-page="pageVocab"]').addEventListener("click", initVocabIfNeeded);
 initVocabIfNeeded();
+
+// ==================== 笔记本 ====================
+// 跟生词本共用同一套"本子轮播，选中间那本点开"的交互和视觉语言
+// （.notebookStage/.notebookCard/notebookTagColor/colorForTitle 都是
+// 直接复用的同名函数/CSS class，不重新发明一遍），只是数据换成
+// notebooks/notes 表；笔记本不需要封面上传/导入导出这些生词本特有的
+// 附加功能，故意没做。
+
+let currentNotebookId = null;
+let currentNotes = [];
+let noteNotebooks = [];
+let vocabPageMode = "vocab"; // 'vocab' | 'notebook'，点顶部标题切换
+
+const notebookSignedOutGate = document.getElementById("notebookSignedOutGate");
+const noteNotebookPicker = document.getElementById("noteNotebookPicker");
+const noteNotebookMain = document.getElementById("noteNotebookMain");
+const noteNotebookStage = document.getElementById("noteNotebookStage");
+const noteNotebookTrack = document.getElementById("noteNotebookTrack");
+let noteCarouselActiveIndex = 0;
+
+function updateNoteActiveFromScroll() {
+  const cards = noteNotebookTrack.querySelectorAll(".notebookCard");
+  if (cards.length === 0) return;
+  const stageRect = noteNotebookStage.getBoundingClientRect();
+  const stageCenter = stageRect.left + stageRect.width / 2;
+  let bestIdx = 0;
+  let bestDist = Infinity;
+  cards.forEach((el, i) => {
+    const r = el.getBoundingClientRect();
+    const dist = Math.abs(r.left + r.width / 2 - stageCenter);
+    if (dist < bestDist) {
+      bestDist = dist;
+      bestIdx = i;
+    }
+    el.classList.toggle("active", false);
+  });
+  cards[bestIdx].classList.add("active");
+  noteCarouselActiveIndex = bestIdx;
+}
+let noteScrollUpdateTimer = null;
+noteNotebookStage.addEventListener("scroll", () => {
+  clearTimeout(noteScrollUpdateTimer);
+  noteScrollUpdateTimer = setTimeout(updateNoteActiveFromScroll, 60);
+});
+
+function centerNoteCarouselOn(index, animate) {
+  const cards = noteNotebookTrack.querySelectorAll(".notebookCard");
+  const idx = Math.max(0, Math.min(cards.length - 1, index));
+  const target = cards[idx];
+  if (!target) return;
+  target.scrollIntoView({ behavior: animate ? "smooth" : "auto", inline: "center", block: "nearest" });
+  noteCarouselActiveIndex = idx;
+  cards.forEach((el, i) => el.classList.toggle("active", i === idx));
+}
+
+function renderNoteNotebookCarousel() {
+  if (noteNotebooks.length === 0) {
+    noteNotebookTrack.innerHTML = "";
+    return;
+  }
+  const activeId = currentNotebookId;
+  noteNotebookTrack.innerHTML = noteNotebooks
+    .map(
+      (nb) => `
+      <div class="notebookCard" data-id="${nb.id}" style="--notebook-tag-color:${notebookTagColor(nb.name)};background-color:${colorForTitle(nb.name)}">
+        <div class="notebookName">${escapeHtml(nb.name)}</div>
+      </div>`
+    )
+    .join("");
+  const idx = Math.max(0, noteNotebooks.findIndex((nb) => nb.id === activeId));
+  centerNoteCarouselOn(idx, false);
+}
+
+async function refreshNoteNotebooks(preferId) {
+  const notebooks = await sbListNotebooks();
+  noteNotebooks = notebooks;
+  currentNotebookId = preferId && notebooks.some((nb) => nb.id === preferId) ? preferId : notebooks[0] ? notebooks[0].id : null;
+  return notebooks;
+}
+
+noteNotebookTrack.addEventListener("click", async (e) => {
+  const cardEl = e.target.closest(".notebookCard");
+  if (!cardEl) return;
+  if (!cardEl.classList.contains("active")) {
+    centerNoteCarouselOn(Array.prototype.indexOf.call(noteNotebookTrack.children, cardEl), true);
+    return;
+  }
+  await openNoteNotebook(Number(cardEl.dataset.id));
+});
+window.addEventListener("resize", () => {
+  if (vocabPageMode === "notebook" && noteNotebookPicker.style.display !== "none") centerNoteCarouselOn(noteCarouselActiveIndex, false);
+});
+
+async function openNoteNotebook(id) {
+  currentNotebookId = id;
+  const nb = noteNotebooks.find((n) => n.id === id);
+  document.getElementById("noteNotebookName").textContent = nb ? nb.name : "";
+  noteNotebookPicker.style.display = "none";
+  noteNotebookMain.style.display = "block";
+  await loadNotes();
+  renderNoteRowList();
+}
+document.getElementById("noteNotebookBackBtn").addEventListener("click", () => {
+  noteNotebookMain.style.display = "none";
+  noteNotebookPicker.style.display = "block";
+  centerNoteCarouselOn(noteCarouselActiveIndex, false);
+});
+
+async function loadNotes() {
+  currentNotes = await sbListNotesByNotebook(currentNotebookId);
+}
+
+function renderNoteRowList() {
+  const list = document.getElementById("noteRowList");
+  const empty = document.getElementById("noteRowEmpty");
+  if (currentNotes.length === 0) {
+    list.innerHTML = "";
+    empty.style.display = "block";
+    return;
+  }
+  empty.style.display = "none";
+  list.innerHTML = currentNotes
+    .map(
+      (n) => `
+      <div class="wordRow noteRow" data-id="${n.id}">
+        <div class="wordMain">
+          <div class="wordHead">
+            <span class="noteBookTitle">${escapeHtml(n.bookTitle || "未知书籍")} · 第${n.page + 1}页</span>
+          </div>
+          <div class="noteQuote">${escapeHtml(n.quote)}</div>
+          <div class="noteComment">${escapeHtml(n.comment)}</div>
+        </div>
+        <button class="trashBtn" data-id="${n.id}" title="删除">🗑</button>
+      </div>`
+    )
+    .join("");
+  list.querySelectorAll(".noteRow .wordMain").forEach((el) => {
+    el.addEventListener("click", () => {
+      const id = Number(el.closest(".noteRow").dataset.id);
+      const n = currentNotes.find((x) => x.id === id);
+      if (n && n.bookId != null) location.href = `reader.html?id=${n.bookId}&page=${n.page}`;
+    });
+  });
+  list.querySelectorAll(".trashBtn").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const id = Number(btn.dataset.id);
+      const n = currentNotes.find((x) => x.id === id);
+      if (!n) return;
+      if (!confirm("删除这条笔记？")) return;
+      await sbDeleteNote(id);
+      currentNotes = currentNotes.filter((x) => x.id !== id);
+      renderNoteRowList();
+      toast("已删除笔记");
+    });
+  });
+}
+
+// ---------------- 新建笔记本弹窗（照抄新建词书那个弹窗的逻辑） ----------------
+const notebookModalOverlay = document.getElementById("notebookModalOverlay");
+const newNotebookInput = document.getElementById("newNotebookInput");
+let notebookModalResolve = null;
+function openNewNotebookModal() {
+  newNotebookInput.value = "";
+  notebookModalOverlay.classList.add("show");
+  setTimeout(() => newNotebookInput.focus(), 50);
+  return new Promise((resolve) => {
+    notebookModalResolve = resolve;
+  });
+}
+function closeNewNotebookModal(result) {
+  notebookModalOverlay.classList.remove("show");
+  if (notebookModalResolve) {
+    notebookModalResolve(result);
+    notebookModalResolve = null;
+  }
+}
+document.getElementById("notebookModalCancel").addEventListener("click", () => closeNewNotebookModal(null));
+document.getElementById("notebookModalConfirm").addEventListener("click", () => {
+  const name = newNotebookInput.value.trim();
+  if (!name) return;
+  closeNewNotebookModal(name);
+});
+newNotebookInput.addEventListener("keydown", (e) => {
+  if (e.key === "Enter") document.getElementById("notebookModalConfirm").click();
+  if (e.key === "Escape") closeNewNotebookModal(null);
+});
+notebookModalOverlay.addEventListener("click", (e) => {
+  if (e.target === notebookModalOverlay) closeNewNotebookModal(null);
+});
+document.getElementById("newNoteNotebookBtn").addEventListener("click", async () => {
+  const name = await openNewNotebookModal();
+  if (!name) return;
+  const id = await sbCreateNotebook(name);
+  await refreshNoteNotebooks(id);
+  renderNoteNotebookCarousel();
+  toast(`已创建笔记本「${name}」`);
+});
+
+// ---------------- 初始化 ----------------
+let notebookInited = false;
+async function initNotebookIfNeeded() {
+  const signedIn = !!sbGetSession();
+  notebookSignedOutGate.style.display = signedIn ? "none" : "block";
+  noteNotebookPicker.style.display = signedIn ? "block" : "none";
+  if (!signedIn) {
+    noteNotebookMain.style.display = "none";
+    return;
+  }
+  if (notebookInited) return;
+  try {
+    await refreshNoteNotebooks();
+    renderNoteNotebookCarousel();
+    notebookInited = true;
+  } catch (err) {
+    if (err.message === "NOT_SIGNED_IN") {
+      notebookSignedOutGate.style.display = "block";
+      noteNotebookPicker.style.display = "none";
+      noteNotebookMain.style.display = "none";
+    } else {
+      // 跟生词本那边同一个思路：字段/表还没建好这类报错不该误导成
+      // "没登录"，就地在轮播下面提示一句。
+      noteNotebookPicker.querySelector(".notebookHint").textContent = "笔记本加载失败：" + err.message;
+    }
+  }
+}
+
+// ---------------- 生词本 / 笔记本 切换（点顶部标题） ----------------
+// 两个模式共用"生词本"这一个底部 tab 的位置，不占用户额外一个格子——
+// 点顶部标题在两者之间切换，切换过程做一个淡出淡入的动画（不是硬切）。
+const vocabModeRootEl = document.getElementById("vocabModeRoot");
+const notebookModeRootEl = document.getElementById("notebookModeRoot");
+const pageTitleEl = document.getElementById("pageTitle");
+
+function switchVocabPageMode(mode) {
+  if (mode === vocabPageMode) return;
+  vocabPageMode = mode;
+  const outEl = mode === "notebook" ? vocabModeRootEl : notebookModeRootEl;
+  const inEl = mode === "notebook" ? notebookModeRootEl : vocabModeRootEl;
+  pageTitleEl.textContent = mode === "notebook" ? "笔记本" : "生词本";
+  outEl.classList.add("modeFadeOut");
+  setTimeout(() => {
+    outEl.style.display = "none";
+    outEl.classList.remove("modeFadeOut");
+    inEl.style.display = "block";
+    inEl.classList.add("modeFadeIn");
+    setTimeout(() => inEl.classList.remove("modeFadeIn"), 220);
+  }, 160);
+  if (mode === "notebook") initNotebookIfNeeded();
+}
+pageTitleEl.addEventListener("click", () => {
+  if (!document.getElementById("pageVocab").classList.contains("active")) return;
+  switchVocabPageMode(vocabPageMode === "vocab" ? "notebook" : "vocab");
+});
+// 切去别的 tab 再点回"生词本"，强制回到生词本模式，不留在笔记本
+// 模式——不然绕一圈回来标题写着"生词本"，实际显示的却是笔记本内容。
+document.querySelector('.tabBtn[data-page="pageVocab"]').addEventListener("click", () => {
+  switchVocabPageMode("vocab");
+});
+// 标题只有在生词本这个 tab 上才能点，光标提示跟着一起切——所有底部
+// tab 按钮共用这一条监听，比每个 tab 单独维护简单。
+document.querySelectorAll(".tabBtn").forEach((btn) => {
+  btn.addEventListener("click", () => {
+    pageTitleEl.classList.toggle("clickable", btn.dataset.page === "pageVocab");
+  });
+});

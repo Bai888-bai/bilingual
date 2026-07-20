@@ -80,11 +80,11 @@
   // notes 表（book_id/page 从 reader.js 暴露的 window.__btrReaderContext
   // 读，这个模块本身不知道当前是哪本书第几页）。
   function handleNote(text, box) {
-    wpRenderNoteInput(box, text, async (comment) => {
+    wpRenderNoteInput(box, text, async (comment, notebookId) => {
       const ctx = window.__btrReaderContext;
       if (!ctx) throw new Error("当前不在阅读页面，没法记笔记");
       if (!sbGetSession()) throw new Error("登录后才能记笔记");
-      await sbAddNote(ctx.bookId, ctx.getPage(), text, comment);
+      await sbAddNote(ctx.bookId, ctx.getPage(), text, comment, notebookId);
       if (typeof ctx.onNoteSaved === "function") ctx.onNoteSaved();
     });
   }

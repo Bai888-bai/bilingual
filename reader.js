@@ -299,7 +299,13 @@ async function runReader() {
     applyNoteMarkers();
   }
 
-  const startIndex = Math.min(book.lastPage || 0, numPages - 1);
+  // 从主界面"笔记本"里点一条笔记跳过来的，URL 上会带 ?page=——这时候
+  // 优先跳去那一页，而不是这台设备自己记的 lastPage（跳笔记这个动作
+  // 的意图很明确就是"我要去看这一页"，不该被"上次读到哪"覆盖掉）。
+  const jumpPageParam = Number(params.get("page"));
+  const startIndex = Number.isFinite(jumpPageParam) && params.has("page")
+    ? Math.min(Math.max(0, jumpPageParam), numPages - 1)
+    : Math.min(book.lastPage || 0, numPages - 1);
   await renderAround(startIndex);
   if (startIndex > 0) pageFlip.turnToPage(startIndex);
   onFlip();

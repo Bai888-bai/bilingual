@@ -296,21 +296,75 @@ function wpRenderSentenceChoice(box, text, onTranslate, onNote) {
   box.querySelector(".noteChoiceBtn").addEventListener("click", onNote);
 }
 
-// 选了"记笔记"之后，原地把弹窗内容换成一个小输入框——onSave 传入用户
-// 写的感想文本，失败了把错误显示在弹窗里，不用另开一个弹窗。
-function wpRenderNoteInput(box, quote, onSave) {
+// 选了"记笔记"之后，原地把弹窗内容换成一个小输入框——笔记本选择这块
+// 照抄 wpRenderWordDetail 里"选词书/新建词书"那一套（选框+新建按钮+
+// 展开式新建输入框），笔记不再按"哪本书"自动分类，改成用户自己建的
+// 笔记本，跟生词本是同一个组织逻辑。onSave(comment, notebookId) 由
+// 调用方（word-interact.js）实际去存，失败了把错误显示在弹窗里，
+// 不用另开一个弹窗。
+async function wpRenderNoteInput(box, quote, onSave) {
   box.innerHTML = `
     <div class="quoteText">${wpEscapeHtml(quote)}</div>
     <textarea class="noteInput" placeholder="写点感想…" rows="3"></textarea>
     <div class="actions">
+      <select class="notebookSelect"></select>
       <button class="saveNoteBtn">保存笔记</button>
+      <button class="newNotebookBtn">新建笔记本</button>
     </div>
     <div class="saveError"></div>
+    <div class="newbook" style="display:none">
+      <input type="text" class="newNotebookName" placeholder="笔记本名称" />
+      <button class="confirmNewNotebook">创建</button>
+    </div>
   `;
   const textarea = box.querySelector(".noteInput");
+  const select = box.querySelector(".notebookSelect");
   const saveBtn = box.querySelector(".saveNoteBtn");
+  const newNotebookBtn = box.querySelector(".newNotebookBtn");
   const errorEl = box.querySelector(".saveError");
   textarea.focus();
+
+  if (!sbGetSession()) {
+    select.style.display = "none";
+    newNotebookBtn.style.display = "none";
+    saveBtn.disabled = true;
+    errorEl.textContent = "登录后才能记笔记";
+    return;
+  }
+
+  const fillNotebooks = (notebooks, selectId) => {
+    select.innerHTML = notebooks.map((n) => `<option value="${n.id}">${wpEscapeHtml(n.name)}</option>`).join("");
+    if (selectId) select.value = selectId;
+  };
+  try {
+    let notebooks = await sbListNotebooks();
+    if (notebooks.length === 0) {
+      await sbCreateNotebook("默认笔记本");
+      notebooks = await sbListNotebooks();
+    }
+    fillNotebooks(notebooks);
+  } catch (err) {
+    errorEl.textContent = "笔记本加载失败：" + err.message;
+  }
+
+  newNotebookBtn.addEventListener("click", () => {
+    box.querySelector(".newbook").style.display = "flex";
+  });
+  box.querySelector(".confirmNewNotebook").addEventListener("click", async () => {
+    const nameInput = box.querySelector(".newNotebookName");
+    const name = nameInput.value.trim();
+    if (!name) return;
+    try {
+      const newId = await sbCreateNotebook(name);
+      const notebooks = await sbListNotebooks();
+      fillNotebooks(notebooks, newId);
+      box.querySelector(".newbook").style.display = "none";
+      nameInput.value = "";
+    } catch (err) {
+      errorEl.textContent = "新建笔记本失败：" + err.message;
+    }
+  });
+
   saveBtn.addEventListener("click", async () => {
     const comment = textarea.value.trim();
     if (!comment) {
@@ -321,7 +375,7 @@ function wpRenderNoteInput(box, quote, onSave) {
     saveBtn.textContent = "保存中…";
     errorEl.textContent = "";
     try {
-      await onSave(comment);
+      await onSave(comment, Number(select.value));
       box.innerHTML = `<div class="translation">笔记已保存</div>`;
       setTimeout(() => wpRemovePopup(), 900);
     } catch (err) {
