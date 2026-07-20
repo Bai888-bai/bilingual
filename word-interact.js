@@ -74,6 +74,31 @@
     }
   }
 
+  // 划句松手先弹"翻译/记笔记"选择框，不直接查词——记笔记不需要调用
+  // lookupText，不该白白烧一次有道/词典额度。选了"翻译"才走原来的
+  // handleSentence；选了"记笔记"在同一个弹窗里原地换成输入框，存到
+  // notes 表（book_id/page 从 reader.js 暴露的 window.__btrReaderContext
+  // 读，这个模块本身不知道当前是哪本书第几页）。
+  function handleNote(text, box) {
+    wpRenderNoteInput(box, text, async (comment) => {
+      const ctx = window.__btrReaderContext;
+      if (!ctx) throw new Error("当前不在阅读页面，没法记笔记");
+      if (!sbGetSession()) throw new Error("登录后才能记笔记");
+      await sbAddNote(ctx.bookId, ctx.getPage(), text, comment);
+      if (typeof ctx.onNoteSaved === "function") ctx.onNoteSaved();
+    });
+  }
+
+  function showSentenceChoice(text, x, y) {
+    const box = wpCreatePopup(x, y);
+    wpRenderSentenceChoice(
+      box,
+      text,
+      () => handleSentence(text, x, y),
+      () => handleNote(text, box)
+    );
+  }
+
   function clearSelectingHighlight(container) {
     if (!container) return;
     container.querySelectorAll(".btr-selecting").forEach((el) => el.classList.remove("btr-selecting"));
@@ -204,7 +229,7 @@
         range.setStartBefore(first);
         range.setEndAfter(last);
         const text = range.toString().trim();
-        if (text) handleSentence(text, e.clientX, e.clientY);
+        if (text) showSentenceChoice(text, e.clientX, e.clientY);
       }
       resetState();
       return;

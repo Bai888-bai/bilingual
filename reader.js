@@ -41,9 +41,19 @@ async function runReader() {
   const sidePanelTab = document.getElementById("sidePanelTab");
   const sidePanelClose = document.getElementById("sidePanelClose");
   const sidePanelScrim = document.getElementById("sidePanelScrim");
+  const sidePanelTitleEl = document.getElementById("sidePanelTitle");
+  const sidePanelTabsEl = document.getElementById("sidePanelTabs");
   const chapterListEl = document.getElementById("chapterList");
+  const bookmarkToggleBtn = document.getElementById("bookmarkToggleBtn");
+  const bookmarkListEl = document.getElementById("bookmarkList");
+  const noteListEl = document.getElementById("noteList");
   const readerAppEl = document.querySelector(".readerApp");
   const readerStageEl = document.getElementById("readerStage");
+  // 提前声明（不是 let 变量提升的问题，是 TDZ）——onFlip 第一次调用
+  // 发生在书签/笔记的加载函数定义之前，onFlip 里会读 bookmarks/notes，
+  // 必须在这之前就有初始值，不然会报"访问未初始化的变量"。
+  let bookmarks = [];
+  let notes = [];
 
   document.getElementById("backBtn").addEventListener("click", () => {
     location.href = "index.html";
@@ -232,17 +242,13 @@ async function runReader() {
   function saveProgress(idx) {
     clearTimeout(saveTimer);
     saveTimer = setTimeout(() => {
+      // 阅读进度只存本地，不推到云端——按用户明确的要求，"读到第几页"
+      // 因设备而异，不同设备各自记自己的，不互相覆盖。之前那版顺手
+      // 把 lastPage 也同步上云，会导致后读的设备把先前设备的记录盖掉，
+      // 这里改回来。
       book.lastPage = idx;
       book.lastOpenedAt = Date.now();
       updateBookLocal(book);
-      // 复用同一个 400ms 防抖，不用另起一个定时器——阅读进度同步失败
-      // 只打个警告，翻页手感不因为这个变卡（跟这次 session 里生词本
-      // scheduleWord 那次的容错方式一样）。
-      if (sbGetSession()) {
-        sbUpdateLibraryBook(bookId, { lastPage: idx }).catch((err) =>
-          console.warn("阅读进度同步到云端失败：", err)
-        );
-      }
     }, 400);
   }
 
@@ -257,6 +263,8 @@ async function runReader() {
     updatePageNum(idx);
     renderAround(idx);
     saveProgress(idx);
+    updateBookmarkToggleBtn();
+    applyNoteMarkers();
   }
 
   const startIndex = Math.min(book.lastPage || 0, numPages - 1);
@@ -390,6 +398,196 @@ async function runReader() {
     }
   }
   refreshChapterList();
+
+  // 侧边栏三个 tab：章节 / 书签 / 笔记，同一时间只显示一个列表容器。
+  const bookmarkPanelBodyEl = document.getElementById("bookmarkPanelBody");
+  const sidePanelLists = { chapter: chapterListEl, bookmark: bookmarkPanelBodyEl, note: noteListEl };
+  function switchSidePanelTab(name) {
+    sidePanelTabsEl.querySelectorAll(".sidePanelTabBtn").forEach((btn) => {
+      const active = btn.dataset.panel === name;
+      btn.classList.toggle("active", active);
+      if (active) sidePanelTitleEl.textContent = btn.dataset.title;
+    });
+    Object.entries(sidePanelLists).forEach(([key, el]) => el.classList.toggle("active", key === name));
+  }
+  sidePanelTabsEl.querySelectorAll(".sidePanelTabBtn").forEach((btn) => {
+    btn.addEventListener("click", () => switchSidePanelTab(btn.dataset.panel));
+  });
+
+  // ---------------- 书签 ----------------
+  async function refreshBookmarks() {
+    if (!sbGetSession()) {
+      bookmarkListEl.innerHTML = `<div class="bookmarkEmpty">登录后才能使用书签</div>`;
+      bookmarkToggleBtn.style.display = "none";
+      return;
+    }
+    bookmarkToggleBtn.style.display = "block";
+    try {
+      bookmarks = await sbListBookmarks(bookId);
+    } catch (err) {
+      bookmarkListEl.innerHTML = `<div class="bookmarkEmpty">书签加载失败：${err.message}</div>`;
+      return;
+    }
+    renderBookmarkList();
+    updateBookmarkToggleBtn();
+  }
+  function renderBookmarkList() {
+    bookmarkListEl.innerHTML = "";
+    if (bookmarks.length === 0) {
+      bookmarkListEl.innerHTML = `<div class="bookmarkEmpty">还没有书签</div>`;
+      return;
+    }
+    for (const bm of bookmarks) {
+      const row = document.createElement("div");
+      row.className = "bookmarkItem";
+      row.innerHTML = `<div class="itemMain"><div class="itemPage">第 ${bm.page + 1} 页</div></div><button class="itemDeleteBtn" title="删除">✕</button>`;
+      row.querySelector(".itemMain").addEventListener("click", () => {
+        pageFlip.turnToPage(bm.page);
+        onFlip();
+        setSidePanel(false);
+      });
+      row.querySelector(".itemDeleteBtn").addEventListener("click", async (e) => {
+        e.stopPropagation();
+        try {
+          await sbDeleteBookmark(bm.id);
+          bookmarks = bookmarks.filter((b) => b.id !== bm.id);
+          renderBookmarkList();
+          updateBookmarkToggleBtn();
+        } catch (err) {
+          showToast("删除书签失败：" + err.message);
+        }
+      });
+      bookmarkListEl.appendChild(row);
+    }
+  }
+  function updateBookmarkToggleBtn() {
+    if (!sbGetSession()) return;
+    const idx = pageFlip.getCurrentPageIndex();
+    const existing = bookmarks.find((b) => b.page === idx);
+    bookmarkToggleBtn.classList.toggle("active", !!existing);
+    bookmarkToggleBtn.textContent = existing ? "− 移除本页书签" : "＋ 在当前页加书签";
+    bookmarkToggleBtn.dataset.existingId = existing ? existing.id : "";
+  }
+  bookmarkToggleBtn.addEventListener("click", async () => {
+    if (!sbGetSession()) {
+      showToast("登录后才能使用书签");
+      return;
+    }
+    const idx = pageFlip.getCurrentPageIndex();
+    const existingId = bookmarkToggleBtn.dataset.existingId;
+    bookmarkToggleBtn.disabled = true;
+    try {
+      if (existingId) {
+        await sbDeleteBookmark(Number(existingId));
+        bookmarks = bookmarks.filter((b) => b.id !== Number(existingId));
+      } else {
+        const id = await sbAddBookmark(bookId, idx);
+        bookmarks.push({ id, bookId, page: idx, createdAt: Date.now() });
+        bookmarks.sort((a, b) => a.page - b.page);
+      }
+      renderBookmarkList();
+      updateBookmarkToggleBtn();
+    } catch (err) {
+      showToast("书签操作失败：" + err.message);
+    } finally {
+      bookmarkToggleBtn.disabled = false;
+    }
+  });
+  refreshBookmarks();
+
+  // ---------------- 笔记 ----------------
+  async function refreshNotes() {
+    if (!sbGetSession()) {
+      noteListEl.innerHTML = `<div class="noteEmpty">登录后才能使用笔记</div>`;
+      return;
+    }
+    try {
+      notes = await sbListNotes(bookId);
+    } catch (err) {
+      noteListEl.innerHTML = `<div class="noteEmpty">笔记加载失败：${err.message}</div>`;
+      return;
+    }
+    renderNoteList();
+    applyNoteMarkers();
+  }
+  function renderNoteList() {
+    noteListEl.innerHTML = "";
+    if (notes.length === 0) {
+      noteListEl.innerHTML = `<div class="noteEmpty">还没有笔记</div>`;
+      return;
+    }
+    for (const n of notes) {
+      const row = document.createElement("div");
+      row.className = "noteItem";
+      row.innerHTML = `
+        <div class="itemMain">
+          <div class="itemPage">第 ${n.page + 1} 页</div>
+          <div class="itemQuote">${wpEscapeHtml(n.quote)}</div>
+          <div class="itemComment">${wpEscapeHtml(n.comment)}</div>
+        </div>
+        <button class="itemDeleteBtn" title="删除">✕</button>`;
+      row.querySelector(".itemMain").addEventListener("click", () => {
+        pageFlip.turnToPage(n.page);
+        onFlip();
+        setSidePanel(false);
+      });
+      row.querySelector(".itemDeleteBtn").addEventListener("click", async (e) => {
+        e.stopPropagation();
+        try {
+          await sbDeleteNote(n.id);
+          notes = notes.filter((x) => x.id !== n.id);
+          renderNoteList();
+          applyNoteMarkers();
+        } catch (err) {
+          showToast("删除笔记失败：" + err.message);
+        }
+      });
+      noteListEl.appendChild(row);
+    }
+  }
+  // 尽力而为：拿当前页所有笔记的摘录文本，去这一页渲染出来的 .btr-w
+  // 序列里找一段连续范围整体匹配上，匹配上就加 .btr-noted 下划线标记。
+  // "重排"模式的分页是按字号动态算的，如果之后调过字号导致分页边界
+  // 挪动，摘录可能被拆到两页之间、找不到完整匹配，这时候就不加标记——
+  // 笔记本身、侧边栏列表、跳转都不受影响，只是原文旁边看不到下划线，
+  // 不是打包票一定能标出来。
+  function applyNoteMarkers() {
+    const idx = pageFlip.getCurrentPageIndex();
+    const leaf = leaves[idx];
+    if (!leaf) return;
+    leaf.querySelectorAll(".btr-noted").forEach((el) => el.classList.remove("btr-noted"));
+    const pageNotes = notes.filter((n) => n.page === idx);
+    if (pageNotes.length === 0) return;
+    const spans = Array.from(leaf.querySelectorAll(".btr-w"));
+    for (const n of pageNotes) {
+      const quote = (n.quote || "").trim();
+      if (!quote) continue;
+      for (let start = 0; start < spans.length; start++) {
+        for (let end = start; end < spans.length && end < start + 60; end++) {
+          const range = document.createRange();
+          range.setStartBefore(spans[start]);
+          range.setEndAfter(spans[end]);
+          const rangeText = range.toString().trim();
+          if (rangeText === quote) {
+            for (let i = start; i <= end; i++) spans[i].classList.add("btr-noted");
+            start = spans.length;
+            break;
+          }
+          if (rangeText.length > quote.length + 4) break;
+        }
+      }
+    }
+  }
+  refreshNotes();
+
+  // 给 word-interact.js/word-popup.js 用的全局上下文——那两个是通用
+  // 交互模块，PDF/EPUB/reflow 阅读页都共用，本身不知道当前是哪本书
+  // 第几页，记笔记的时候从这里读。
+  window.__btrReaderContext = {
+    bookId,
+    getPage: () => pageFlip.getCurrentPageIndex(),
+    onNoteSaved: () => refreshNotes(),
+  };
 
   layoutToggleBtn.addEventListener("click", () => {
     spreadMode = !spreadMode;

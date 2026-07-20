@@ -140,6 +140,8 @@ async function syncShelfWithCloud(localBooks, session) {
   // 云端有、本地没有——多半是另一台设备上传的书，先在本地建一条占位
   // 记录（没有 fileBlob），书架上照常显示书脊（封面/取色都不依赖
   // fileBlob），真正点开的时候阅读器会发现没有文件再去云端下载。
+  // lastPage 不抄云端的值——阅读进度按设备各自记录，这台设备第一次
+  // 同步到这本书就从第 0 页开始，不受别的设备读到哪一页影响。
   for (const rb of remoteBooks) {
     if (localIds.has(rb.id)) continue;
     await addBookLocal({
@@ -150,7 +152,6 @@ async function syncShelfWithCloud(localBooks, session) {
       coverData: rb.coverData,
       addedAt: rb.addedAt,
       shelfOrder: rb.shelfOrder,
-      lastPage: rb.lastPage,
     });
   }
 

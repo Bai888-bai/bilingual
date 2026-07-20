@@ -250,6 +250,40 @@ async function sbDeleteBookFile(path) {
   });
 }
 
+// ---------------- 书签（bookmarks 表） ----------------
+
+function sbMapBookmarkFromRow(row) {
+  return { id: row.id, bookId: row.book_id, page: row.page, createdAt: new Date(row.created_at).getTime() };
+}
+async function sbListBookmarks(bookId) {
+  const rows = await sbRest(`/bookmarks?book_id=eq.${bookId}&order=page.asc`);
+  return rows.map(sbMapBookmarkFromRow);
+}
+async function sbAddBookmark(bookId, page) {
+  const rows = await sbRest(`/bookmarks`, { method: "POST", body: JSON.stringify({ book_id: bookId, page }) });
+  return rows[0].id;
+}
+async function sbDeleteBookmark(id) {
+  await sbRest(`/bookmarks?id=eq.${id}`, { method: "DELETE", prefer: "return=minimal" });
+}
+
+// ---------------- 划句笔记（notes 表） ----------------
+
+function sbMapNoteFromRow(row) {
+  return { id: row.id, bookId: row.book_id, page: row.page, quote: row.quote, comment: row.comment, createdAt: new Date(row.created_at).getTime() };
+}
+async function sbListNotes(bookId) {
+  const rows = await sbRest(`/notes?book_id=eq.${bookId}&order=page.asc`);
+  return rows.map(sbMapNoteFromRow);
+}
+async function sbAddNote(bookId, page, quote, comment) {
+  const rows = await sbRest(`/notes`, { method: "POST", body: JSON.stringify({ book_id: bookId, page, quote, comment }) });
+  return rows[0].id;
+}
+async function sbDeleteNote(id) {
+  await sbRest(`/notes?id=eq.${id}`, { method: "DELETE", prefer: "return=minimal" });
+}
+
 // ---------------- 查词（走 Edge Function 代理，不能直接调有道，见 supabase/functions/lookup） ----------------
 const LOOKUP_FN_URL = `${SUPABASE_URL}/functions/v1/smart-task`;
 const LOOKUP_CACHE_PREFIX = "lookupCache:";

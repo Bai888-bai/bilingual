@@ -45,17 +45,29 @@
       <button id="btnNext" title="下一页">›</button>
     </div>
 
-    <button class="sidePanelTab" id="sidePanelTab" title="章节 / 跳转页码">☰</button>
+    <button class="sidePanelTab" id="sidePanelTab" title="章节 / 书签 / 笔记">☰</button>
     <div class="sidePanelScrim" id="sidePanelScrim"></div>
     <div class="sidePanel" id="sidePanel">
       <div class="sidePanelHeader">
-        <span>章节</span>
+        <span id="sidePanelTitle">章节</span>
         <button id="sidePanelClose" title="收起">✕</button>
       </div>
       <div class="sidePanelJump">
         <input type="range" id="pageSlider" min="0" max="0" value="0" />
       </div>
-      <div class="chapterList" id="chapterList"></div>
+      <nav class="sidePanelTabs" id="sidePanelTabs">
+        <button class="sidePanelTabBtn active" data-panel="chapter" data-title="章节">章节</button>
+        <button class="sidePanelTabBtn" data-panel="bookmark" data-title="书签">书签</button>
+        <button class="sidePanelTabBtn" data-panel="note" data-title="笔记">笔记</button>
+      </nav>
+      <div class="sidePanelBody">
+        <div class="sidePanelList active" id="chapterList" data-panel="chapter"></div>
+        <div class="sidePanelList" id="bookmarkPanelBody" data-panel="bookmark">
+          <button class="bookmarkToggleBtn" id="bookmarkToggleBtn">＋ 在当前页加书签</button>
+          <div id="bookmarkList"></div>
+        </div>
+        <div class="sidePanelList" id="noteList" data-panel="note"></div>
+      </div>
     </div>
   </div>
 

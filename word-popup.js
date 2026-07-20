@@ -281,3 +281,53 @@ function wpRenderSentence(box, translation, original) {
   `;
   box.querySelector(".speakBtn").addEventListener("click", () => wpSpeakTTS(original));
 }
+
+// 划句松手先弹这个——不直接查词翻译，让用户自己选"翻译"还是"记笔记"，
+// 记笔记这条路径完全不碰 lookupText，不产生一次有道/词典调用。
+function wpRenderSentenceChoice(box, text, onTranslate, onNote) {
+  box.innerHTML = `
+    <div class="quoteText">${wpEscapeHtml(text)}</div>
+    <div class="actions">
+      <button class="translateChoiceBtn">🌐 翻译</button>
+      <button class="noteChoiceBtn">📝 记笔记</button>
+    </div>
+  `;
+  box.querySelector(".translateChoiceBtn").addEventListener("click", onTranslate);
+  box.querySelector(".noteChoiceBtn").addEventListener("click", onNote);
+}
+
+// 选了"记笔记"之后，原地把弹窗内容换成一个小输入框——onSave 传入用户
+// 写的感想文本，失败了把错误显示在弹窗里，不用另开一个弹窗。
+function wpRenderNoteInput(box, quote, onSave) {
+  box.innerHTML = `
+    <div class="quoteText">${wpEscapeHtml(quote)}</div>
+    <textarea class="noteInput" placeholder="写点感想…" rows="3"></textarea>
+    <div class="actions">
+      <button class="saveNoteBtn">保存笔记</button>
+    </div>
+    <div class="saveError"></div>
+  `;
+  const textarea = box.querySelector(".noteInput");
+  const saveBtn = box.querySelector(".saveNoteBtn");
+  const errorEl = box.querySelector(".saveError");
+  textarea.focus();
+  saveBtn.addEventListener("click", async () => {
+    const comment = textarea.value.trim();
+    if (!comment) {
+      errorEl.textContent = "写点什么再保存吧";
+      return;
+    }
+    saveBtn.disabled = true;
+    saveBtn.textContent = "保存中…";
+    errorEl.textContent = "";
+    try {
+      await onSave(comment);
+      box.innerHTML = `<div class="translation">笔记已保存</div>`;
+      setTimeout(() => wpRemovePopup(), 900);
+    } catch (err) {
+      saveBtn.disabled = false;
+      saveBtn.textContent = "保存笔记";
+      errorEl.textContent = "保存失败：" + err.message;
+    }
+  });
+}
