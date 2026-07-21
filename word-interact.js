@@ -35,6 +35,7 @@
     longPressFired = false;
 
   async function handleShortPress(span, x, y) {
+    window.__btrDbg && window.__btrDbg(`handleShortPress: word="${span.dataset.w}"`);
     // 跟插件的"替换"模式一致：短按原地把单词换成中文，再短按一次换回
     // 英文；长按才弹出带收藏按钮的详情框。
     if (span.classList.contains("translated")) {
@@ -47,29 +48,34 @@
       span.textContent = data.translation || span.dataset.w;
       span.classList.add("translated");
     } catch (err) {
+      window.__btrDbg && window.__btrDbg(`handleShortPress 出错: ${err.message}`);
       const box = wpCreatePopup(x, y);
       wpSetError(box, err.message);
     }
   }
 
   async function handleLongPress(span, x, y) {
+    window.__btrDbg && window.__btrDbg(`handleLongPress: word="${span.dataset.w}" x=${x} y=${y}`);
     const box = wpCreatePopup(x, y);
     wpSetLoading(box);
     try {
       const data = await lookupText(span.dataset.w);
       await wpRenderWordDetail(box, data);
     } catch (err) {
+      window.__btrDbg && window.__btrDbg(`handleLongPress 出错: ${err.message}`);
       wpSetError(box, err.message);
     }
   }
 
   async function handleSentence(text, x, y) {
+    window.__btrDbg && window.__btrDbg(`handleSentence: "${text}"`);
     const box = wpCreatePopup(x, y);
     wpSetLoading(box);
     try {
       const data = await lookupText(text);
       wpRenderSentence(box, data.translation, text);
     } catch (err) {
+      window.__btrDbg && window.__btrDbg(`handleSentence 出错: ${err.message}`);
       wpSetError(box, err.message);
     }
   }
@@ -90,6 +96,7 @@
   }
 
   function showSentenceChoice(text, x, y) {
+    window.__btrDbg && window.__btrDbg(`showSentenceChoice: "${text}"`);
     const box = wpCreatePopup(x, y);
     wpRenderSentenceChoice(
       box,
@@ -137,6 +144,10 @@
       const span = e.target.closest && e.target.closest(".btr-w");
       downX = e.clientX;
       downY = e.clientY;
+      window.__btrDbg &&
+        window.__btrDbg(
+          `pointerdown type=${e.pointerType} target=${e.target.tagName}.${e.target.className} span=${span ? span.dataset.w : "无"}`
+        );
       if (span) {
         // 从源头压住：既不让浏览器把这次触摸当成"长按选词"，也不让它
         // 合成 mousedown 给翻页库（阅读器里的翻页库自己也全局监听
@@ -236,6 +247,13 @@
     }
     if (startSpan && !dragging && e.target.closest && e.target.closest(".btr-w") === startSpan) {
       handleShortPress(startSpan, e.clientX, e.clientY);
+    } else {
+      window.__btrDbg &&
+        window.__btrDbg(
+          `finishGesture: 无操作 (startSpan=${!!startSpan} dragging=${dragging} targetMatch=${
+            e.target.closest && e.target.closest(".btr-w") === startSpan
+          })`
+        );
     }
     resetState();
   }

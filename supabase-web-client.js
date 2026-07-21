@@ -6,6 +6,28 @@ const SUPABASE_ANON_KEY =
 
 const SB_SESSION_KEY = "supabaseSession";
 
+// 临时诊断用：iPad 上"点了没反应"排查专用，页面顶部红条，截图即可看到
+// 发生了什么——之前排查 word-popup/分页 bug 都靠这招比让用户读控制台
+// 靠谱得多。查完这个问题就整块删掉。
+function btrDbg(msg) {
+  let el = document.getElementById("btrDbgOverlay");
+  if (!el) {
+    el = document.createElement("div");
+    el.id = "btrDbgOverlay";
+    el.style.cssText =
+      "position:fixed;top:0;left:0;right:0;z-index:2147483647;background:rgba(180,0,0,0.92);" +
+      "color:#fff;font:11px/1.4 monospace;padding:6px;max-height:45vh;overflow-y:auto;" +
+      "white-space:pre-wrap;pointer-events:none;";
+    document.documentElement.appendChild(el);
+  }
+  const line = document.createElement("div");
+  const t = new Date();
+  line.textContent = `[${t.toISOString().slice(11, 23)}] ${msg}`;
+  el.appendChild(line);
+  while (el.childNodes.length > 40) el.removeChild(el.firstChild);
+}
+window.__btrDbg = btrDbg;
+
 function sbGetSession() {
   const raw = localStorage.getItem(SB_SESSION_KEY);
   return raw ? JSON.parse(raw) : null;
@@ -336,6 +358,7 @@ function setCachedLookup(key, data) {
 }
 
 async function lookupText(text) {
+  btrDbg(`lookupText("${text}") 开始`);
   const cacheKey = text.trim().toLowerCase();
   const isSingleWord = /^[A-Za-z']+$/.test(text.trim());
   const cached = getCachedLookup(cacheKey);
@@ -344,20 +367,33 @@ async function lookupText(text) {
   // Free Dictionary API 暂时性失败存下的"空"结果，不这样处理的话会一直
   // 卡在没有词性/例句，且用户没有入口能清缓存重查。
   if (cached && (!isSingleWord || (cached.explains && cached.explains.length > 0))) {
+    btrDbg(`lookupText("${text}") 命中缓存`);
     return cached;
   }
 
-  const resp = await fetch(LOOKUP_FN_URL, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
-      apikey: SUPABASE_ANON_KEY,
-    },
-    body: JSON.stringify({ text }),
-  });
+  btrDbg(`lookupText("${text}") 发起 fetch -> ${LOOKUP_FN_URL}`);
+  let resp;
+  try {
+    resp = await fetch(LOOKUP_FN_URL, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+        apikey: SUPABASE_ANON_KEY,
+      },
+      body: JSON.stringify({ text }),
+    });
+  } catch (err) {
+    btrDbg(`lookupText("${text}") fetch 抛出异常: ${err.name} ${err.message}`);
+    throw err;
+  }
+  btrDbg(`lookupText("${text}") fetch 返回 status=${resp.status}`);
   const json = await resp.json();
-  if (!json.ok) throw new Error(json.error || "LOOKUP_FAILED");
+  if (!json.ok) {
+    btrDbg(`lookupText("${text}") json.ok=false error=${json.error}`);
+    throw new Error(json.error || "LOOKUP_FAILED");
+  }
+  btrDbg(`lookupText("${text}") 成功，explains=${(json.data.explains || []).length}`);
   if (!isSingleWord || (json.data.explains && json.data.explains.length > 0)) {
     setCachedLookup(cacheKey, json.data);
   }
