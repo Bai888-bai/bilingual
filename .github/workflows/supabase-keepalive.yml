@@ -1,0 +1,23 @@
+# Supabase 免费项目闲置约 7 天会被自动暂停（2026-10 就因此查词/同步全挂过）。
+# 每 3 天查一次数据库让它保持活跃；项目已经暂停时请求会失败，GitHub 会发邮件提醒。
+# 需要在仓库 Settings → Secrets and variables → Actions 里加 SUPABASE_ANON_KEY
+# （值同 supabase-web-client.js 里的 anon key）。
+# shortcut: GitHub 会停用 60 天没有提交的仓库里的定时任务，会先发邮件，到时点一下 Enable 即可。
+name: Supabase keep-alive
+
+on:
+  schedule:
+    - cron: "0 3 */3 * *"
+  workflow_dispatch:
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Query database
+        env:
+          KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+        run: |
+          curl -fsS -m 30 -o /dev/null -w "HTTP %{http_code}\n" \
+            -H "apikey: $KEY" -H "Authorization: Bearer $KEY" \
+            "https://uenzeipdpadwkqbiotsf.supabase.co/rest/v1/library_books?select=id&limit=1"
