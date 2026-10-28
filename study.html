@@ -7,20 +7,23 @@
   <link rel="manifest" href="manifest.webmanifest" />
   <title>书房 - 中英阅读助手</title>
   <link rel="stylesheet" href="study.css" />
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+        "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+      }
+    }
+  </script>
 </head>
 <body>
-  <div id="scroller">
-    <div id="sizer">
-      <div id="stage">
-        <div id="shelves"></div>
-        <div id="desk"></div>
-      </div>
-    </div>
-  </div>
+  <canvas id="scene"></canvas>
   <a class="backLink" href="index.html">‹ 书架</a>
+  <div class="hint" id="hint">拖动看看四周 · 点书架上的书</div>
+  <div id="loading">正在布置书房…</div>
   <div id="fadeOverlay"></div>
 
   <script src="book-store.js"></script>
-  <script src="study.js"></script>
+  <script type="module" src="study.js"></script>
 </body>
 </html>

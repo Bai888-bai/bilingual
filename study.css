@@ -1,81 +1,10 @@
 html, body { height: 100%; margin: 0; background: #e9e2d3; overflow: hidden; }
 body { font-family: Georgia, "Songti SC", "STSong", "SimSun", serif; }
 
-/* 横向放不下时可以拖着看两边书架：触屏/触控板走原生滚动，鼠标拖拽在 study.js 里补 */
-#scroller {
-  position: fixed; inset: 0; overflow: auto; scrollbar-width: none;
-  -webkit-overflow-scrolling: touch; overscroll-behavior: none; cursor: grab;
-}
-#scroller::-webkit-scrollbar { display: none; }
-#scroller.dragging { cursor: grabbing; }
-#sizer { position: relative; }
-/* 舞台固定用背景图原始像素（1774×887）当坐标系，整体 scale 到屏幕上，
-   书架格子、桌面的位置都直接写图上量出来的像素 */
-#stage {
-  position: absolute; left: 0; top: 0; width: 1774px; height: 887px; transform-origin: 0 0;
-  background: url("study-bg.jpg") 0 0 / 100% 100% no-repeat;
-}
-
-.spine {
-  position: absolute; bottom: 0; padding: 6px 0; box-sizing: border-box; border: none; cursor: pointer;
-  border-radius: 2px 2px 1px 1px; background-size: cover; background-position: center;
-  /* colorForTitle 给的是书架首页那套偏深偏艳的色，压淡一点融进这张浅色调的画里 */
-  filter: sepia(0.5) saturate(0.45) brightness(1.55);
-  box-shadow: inset -3px 0 4px rgba(0,0,0,0.18), inset 2px 0 2px rgba(255,255,255,0.15), 1px 0 2px rgba(0,0,0,0.25);
-  writing-mode: vertical-rl; color: rgba(255,250,238,0.92); font-size: 11px; letter-spacing: 1px;
-  overflow: hidden; white-space: nowrap; text-overflow: ellipsis; text-shadow: 0 1px 1px rgba(0,0,0,0.35);
-  transition: transform 0.2s ease;
-}
-.spine.hasCover { filter: saturate(0.75) brightness(1.05); color: transparent; text-shadow: none; }
-.spine:hover, .spine:focus-visible { transform: translateY(-6px); outline: none; }
-
-/* 桌上摊开的书：平放在桌面上，靠 rotateX 做出"躺着"的透视 */
-.openBook {
-  position: absolute; left: 765px; top: 488px; width: 230px; height: 150px; border: none; padding: 0;
-  cursor: pointer; background: #8a7356; border-radius: 5px; transform-origin: 50% 100%;
-  box-shadow: 0 6px 10px rgba(60,40,20,0.35);
-  transform: perspective(900px) rotateX(66deg);
-  transition: transform 0.6s cubic-bezier(0.3, 0.7, 0.2, 1);
-}
-.openBook .page {
-  position: absolute; top: 3px; bottom: 3px; width: calc(50% - 3px); box-sizing: border-box; padding: 16px 12px;
-  background: repeating-linear-gradient(transparent 0 13px, rgba(120,100,70,0.12) 13px 14px) #fbf7ec;
-  box-shadow: 0 2px 6px rgba(60,40,20,0.35);
-  font-size: 15px; color: #5a4a35; text-align: center; line-height: 1.4; overflow: hidden;
-}
-.openBook .page.left { left: 3px; border-radius: 3px 0 0 3px; }
-.openBook .page.right { right: 3px; border-radius: 0 3px 3px 0; }
-.openBook .page.left::after, .openBook .page.right::after {
-  content: ""; position: absolute; top: 0; bottom: 0; width: 18px;
-}
-.openBook .page.left::after { right: 0; background: linear-gradient(to right, transparent, rgba(80,60,30,0.18)); }
-.openBook .page.right::after { left: 0; background: linear-gradient(to left, transparent, rgba(80,60,30,0.18)); }
-.openBook .bookTitle { background: #fbf7ec; display: block; padding: 4px 0; } /* 盖住标题后面的横线 */
-.openBook:hover { transform: perspective(900px) rotateX(58deg) translateY(-4px); }
-.openBook.opening { transform: perspective(900px) rotateX(0deg) translateY(-200px) scale(2.4); }
-
-/* 桌子右边那一摞"最近读过"：书平躺着叠起来，从正面只看得到书脊 */
-.pileBook {
-  position: absolute; height: 15px; border: none; padding: 0 8px; cursor: pointer; border-radius: 2px;
-  filter: sepia(0.5) saturate(0.45) brightness(1.55);
-  box-shadow: inset 0 -2px 3px rgba(0,0,0,0.2), 0 1px 2px rgba(0,0,0,0.25);
-  color: rgba(255,250,238,0.95); font: 10px/15px Georgia, serif; text-align: left;
-  overflow: hidden; white-space: nowrap; text-overflow: ellipsis; transition: transform 0.2s ease;
-}
-.pileBook:hover, .pileBook:focus-visible { transform: translateX(-6px); outline: none; }
-
-.deskNote {
-  position: absolute; left: 760px; top: 585px; width: 240px; padding: 10px 14px; box-sizing: border-box;
-  background: #fbf7ec; color: #6b5a3d; font-size: 14px; text-align: center; text-decoration: none;
-  box-shadow: 0 2px 6px rgba(60,40,20,0.3); transform: rotate(-2deg);
-}
-
-/* 从书架飞到桌上的那本书的"替身"，动画完就删 */
-.flyingSpine {
-  position: fixed; z-index: 50; pointer-events: none; border-radius: 2px;
-  filter: sepia(0.5) saturate(0.45) brightness(1.55); background-size: cover;
-  transition: all 0.55s cubic-bezier(0.4, 0.1, 0.2, 1);
-}
+/* touch-action:none：拖动转头交给 study.js，不让浏览器拿去滚动/缩放页面 */
+#scene { position: fixed; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; cursor: grab; }
+#scene.dragging { cursor: grabbing; }
+#scene.overBook { cursor: pointer; }
 
 .backLink {
   position: fixed; top: calc(12px + env(safe-area-inset-top)); left: 12px; z-index: 40;
@@ -84,8 +13,21 @@ body { font-family: Georgia, "Songti SC", "STSong", "SimSun", serif; }
   box-shadow: 0 1px 4px rgba(60,40,20,0.2);
 }
 
+.hint {
+  position: fixed; left: 50%; bottom: calc(18px + env(safe-area-inset-bottom)); transform: translateX(-50%);
+  z-index: 40; padding: 6px 14px; border-radius: 16px; font-size: 13px; color: #4a3d2a;
+  background: rgba(251,247,236,0.7); backdrop-filter: blur(6px); transition: opacity 0.6s ease; pointer-events: none;
+}
+.hint.hide { opacity: 0; }
+
+#loading {
+  position: fixed; inset: 0; z-index: 50; display: flex; align-items: center; justify-content: center;
+  background: #e9e2d3; color: #6b5a3d; font-size: 16px; letter-spacing: 2px; transition: opacity 0.6s ease;
+}
+#loading.done { opacity: 0; pointer-events: none; }
+
 #fadeOverlay {
   position: fixed; inset: 0; z-index: 60; background: #2b2e38; opacity: 0; pointer-events: none;
-  transition: opacity 0.5s ease 0.15s;
+  transition: opacity 0.5s ease 0.35s;
 }
 #fadeOverlay.show { opacity: 1; }
