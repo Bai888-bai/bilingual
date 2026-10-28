@@ -67,17 +67,6 @@ fileInput.addEventListener("change", async (e) => {
   renderLibrary();
 });
 
-// 没有自定义封面的书，书脊颜色按书名哈希出来一个固定色调——同一本书
-// 每次刷新颜色都一样，不同书之间大概率不重复，光靠这个也能一眼分清
-// 书架上哪本是哪本，不是"一排一模一样的方块靠标题辨认"。
-function colorForTitle(title) {
-  let hash = 0;
-  const s = String(title || "");
-  for (let i = 0; i < s.length; i++) hash = (hash * 31 + s.charCodeAt(i)) | 0;
-  const hue = Math.abs(hash) % 360;
-  return `hsl(${hue}, 42%, 30%)`;
-}
-
 // 书架顺序是读者手动拖出来的，跟"什么时候导入的"（addedAt）没关系，
 // 单独存一个 shelfOrder 字段。老数据/新导入的书没有这个字段，第一次
 // 读到的时候按当前（按 addedAt 排的）顺序垫一个初始值再存回去，之后

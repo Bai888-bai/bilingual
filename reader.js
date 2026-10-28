@@ -58,7 +58,7 @@ async function runReader() {
 
   async function exitReader() {
     await flushProgress();
-    location.href = "index.html";
+    location.href = new URLSearchParams(location.search).get("from") === "study" ? "study.html" : "index.html";
   }
   document.getElementById("backBtn").addEventListener("click", exitReader);
   // 沉浸模式下浮在左上角的退出按钮——顶部工具栏整条都是 display:none，

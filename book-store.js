@@ -67,6 +67,18 @@ async function deleteBookLocal(id) {
   });
 }
 
+// 没有自定义封面的书，书脊颜色按书名哈希出来一个固定色调——同一本书
+// 每次刷新颜色都一样，不同书之间大概率不重复，光靠这个也能一眼分清
+// 书架上哪本是哪本，不是"一排一模一样的方块靠标题辨认"。书架首页、
+// 生词本、书房三个地方共用，所以放在这个早加载的共用文件里。
+function colorForTitle(title) {
+  let hash = 0;
+  const s = String(title || "");
+  for (let i = 0; i < s.length; i++) hash = (hash * 31 + s.charCodeAt(i)) | 0;
+  const hue = Math.abs(hash) % 360;
+  return `hsl(${hue}, 42%, 30%)`;
+}
+
 // 压缩图片成 base64 data URI——生词本封面、书架封面都用这个（两边都
 // 要能同步到云端的 text 字段，存不了原始 Blob，得先压缩）。放在这个
 // 早加载的文件里，不放调用方自己的文件里，避免 app.js/vocab.js 谁先
