@@ -194,10 +194,14 @@ function buildOutside() {
         float fbm(vec2 p){ float v=0.0, a=0.5; for(int i=0;i<5;i++){ v+=a*noise(p); p*=2.03; a*=0.5; } return v; }
         void main(){
           float h = max(vDir.y, 0.0);
-          vec3 col = mix(vec3(0.80,0.89,0.96), vec3(0.33,0.58,0.90), pow(h, 0.5));
-          vec2 uv = vDir.xz / (vDir.y + 0.12) * 1.6 + vec2(uTime * 0.012, uTime * 0.004);
-          float c = smoothstep(0.52, 0.78, fbm(uv)) * smoothstep(0.0, 0.18, h);
-          col = mix(col, vec3(1.0), c * 0.9);
+          vec3 col = mix(vec3(0.70,0.83,0.95), vec3(0.30,0.55,0.90), pow(h, 0.5));
+          // 云往一个方向慢慢飘，同时自己缓慢变形（第二层噪声用不同速度），不会像一张贴图在平移
+          vec2 uv = vDir.xz / (vDir.y + 0.12) * 1.6;
+          float n = fbm(uv + vec2(uTime * 0.13, uTime * 0.03)) * 0.75 + fbm(uv * 2.2 - vec2(uTime * 0.05, 0.0)) * 0.25;
+          float c = smoothstep(0.5, 0.66, n) * smoothstep(0.0, 0.18, h);
+          // 云的底部稍微暗一点，才有体积感，不是一层白雾
+          vec3 cloud = mix(vec3(0.86,0.88,0.92), vec3(1.0), smoothstep(0.55, 0.8, n));
+          col = mix(col, cloud, c * 0.95);
           gl_FragColor = vec4(col, 1.0);
           #include <tonemapping_fragment>
           #include <colorspace_fragment>
@@ -377,7 +381,6 @@ function measureShelves(shelf) {
     }
     y = surface - 0.03;
   }
-  rows.forEach((row, i) => (row.deco = rows.length > 2 && (i === 0 || i === rows.length - 1)));
   return rows;
 }
 
@@ -388,14 +391,35 @@ function mutedColor(title) {
   return `hsl(${hue}, 18%, 52%)`;
 }
 
-function spineTexture(key, title, color) {
+// 书脊：有自定义封面就跟书架首页一样用封面图（取中间一条），没有就用书名哈希出来的颜色
+function spineTexture(key, title, color, coverData) {
   if (spineTexCache.has(key)) return spineTexCache.get(key);
   const c = document.createElement("canvas");
   c.width = 64;
   c.height = 512;
-  const ctx = c.getContext("2d");
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.anisotropy = 4;
+  spineTexCache.set(key, tex);
+  paintSpine(c.getContext("2d"), title, color, null);
+  if (coverData) {
+    const img = new Image();
+    img.onload = () => {
+      paintSpine(c.getContext("2d"), title, color, img);
+      tex.needsUpdate = true;
+    };
+    img.src = coverData;
+  }
+  return tex;
+}
+
+function paintSpine(ctx, title, color, img) {
   ctx.fillStyle = color;
   ctx.fillRect(0, 0, 64, 512);
+  if (img) {
+    const s = Math.max(64 / img.width, 512 / img.height);
+    ctx.drawImage(img, (64 - img.width * s) / 2, (512 - img.height * s) / 2, img.width * s, img.height * s);
+  }
   const shade = ctx.createLinearGradient(0, 0, 64, 0);
   shade.addColorStop(0, "rgba(0,0,0,0.25)");
   shade.addColorStop(0.3, "rgba(255,255,255,0.08)");
@@ -417,14 +441,25 @@ function spineTexture(key, title, color) {
     while (ctx.measureText(title).width > 400 && size > 14) ctx.font = `${--size}px Georgia, "Songti SC", serif`;
     let text = title;
     while (ctx.measureText(text).width > 400 && text.length > 2) text = text.slice(0, -2) + "…";
+    if (img) {
+      // 封面图上字的底色不确定，垫一条半透明深色带，书名才看得清
+      ctx.fillStyle = "rgba(30,24,16,0.45)";
+      ctx.fillRect(-Math.min(ctx.measureText(text).width / 2 + 14, 240), -20, Math.min(ctx.measureText(text).width + 28, 480), 40);
+      ctx.fillStyle = "rgba(250,243,225,0.95)";
+    }
     ctx.fillText(text, 0, 0);
     ctx.restore();
   }
-  const tex = new THREE.CanvasTexture(c);
-  tex.colorSpace = THREE.SRGBColorSpace;
-  tex.anisotropy = 4;
-  spineTexCache.set(key, tex);
-  return tex;
+}
+
+const coverTexCache = new Map();
+function coverTexture(key, coverData) {
+  if (!coverTexCache.has(key)) {
+    const t = texLoader.load(coverData);
+    t.colorSpace = THREE.SRGBColorSpace;
+    coverTexCache.set(key, t);
+  }
+  return coverTexCache.get(key);
 }
 
 let pagesMat = null;
@@ -446,12 +481,15 @@ function pageEdgeMaterial() {
   return pagesMat;
 }
 
-// 书块：x = 厚度，y = 高度，z = 深度；+z 面是书脊（朝外），±x 是封面封底，其余是纸页边
-function makeBook(dims, title, color, key) {
-  const cover = new THREE.MeshStandardMaterial({ color, roughness: 0.75 });
-  const spine = new THREE.MeshStandardMaterial({ map: spineTexture(key, title, color), roughness: 0.7 });
+// 书块：x = 厚度，y = 高度，z = 深度；+z 面是书脊（朝外），+x 是封面（书脊朝自己、
+// 字从上往下读时封面在右手边），-x 是封底，其余是纸页边
+function makeBook(dims, b, key) {
+  const color = mutedColor(b.title);
+  const back = new THREE.MeshStandardMaterial({ color, roughness: 0.75 });
+  const front = b.coverData ? new THREE.MeshStandardMaterial({ map: coverTexture(key, b.coverData), roughness: 0.7 }) : back;
+  const spine = new THREE.MeshStandardMaterial({ map: spineTexture(key, b.title, color, b.coverData), roughness: 0.7 });
   const pages = pageEdgeMaterial();
-  const m = new THREE.Mesh(new THREE.BoxGeometry(dims.t, dims.h, dims.d), [cover, cover, pages, pages, spine, pages]);
+  const m = new THREE.Mesh(new THREE.BoxGeometry(dims.t, dims.h, dims.d), [front, back, pages, pages, spine, pages]);
   m.castShadow = m.receiveShadow = true;
   return m;
 }
@@ -523,50 +561,28 @@ function layoutBooks() {
   const { center, pile } = deskBooks();
   const onDesk = new Set([center, ...pile]);
 
-  // 用户的书从视线高度附近的格子开始放；每个书架最上、最下一层只摆装饰书，书架不会显得空
-  const rows = shelfRows;
-  const userRows = rows.filter((row) => !row.deco).sort((a, b) => Math.abs(a.y - 1.1) - Math.abs(b.y - 1.1));
+  // 书架上只放书库里真实的书（跟书架首页同一份数据、同样的顺序和封面），
+  // 从视线高度附近的格子开始放，伸手就够得着
+  const userRows = shelfRows.slice().sort((a, b) => Math.abs(a.y - 1.1) - Math.abs(b.y - 1.1));
   let r = 0;
   let x = userRows.length ? userRows[0].x0 : 0;
-  const used = new Map(userRows.map((row) => [row, row.x0]));
   for (const b of books) {
     if (onDesk.has(b) || !userRows.length) continue;
     const d = bookDims(b.id);
     if (x + d.t > userRows[r].x1) {
-      used.set(userRows[r], x);
       r++;
       // shortcut: 书架放满（几百本）后多出来的书不显示；真到这个量再加第三个书架
       if (r >= userRows.length) break;
       x = userRows[r].x0;
     }
     const row = userRows[r];
-    const color = mutedColor(b.title);
-    const m = makeBook(d, b.title, color, `u${b.id}`);
+    const m = makeBook(d, b, `u${b.id}`);
     m.position.set(x + d.t / 2, row.y + Math.min(d.h, row.height - 0.02) / 2, row.z - d.d / 2 + 0.06);
     m.scale.y = Math.min(1, (row.height - 0.02) / d.h);
     m.userData = { book: b, action: "shelf", home: m.position.clone() };
     row.shelf.userData.bookGroup.add(m);
     clickable.push(m);
     x += d.t + 0.002;
-    used.set(row, x);
-  }
-
-  // 装饰书：每层剩下的空位填一部分，留一点空隙，看起来像真有人在用的书架
-  const rand = mulberry(11);
-  const palette = [0x7d8a72, 0x8b6e5a, 0x6f7f8c, 0xb5a58a, 0x8c5f55, 0x9aa28a, 0xc2b49a];
-  for (const row of rows) {
-    let dx = used.get(row) ?? row.x0;
-    const stop = row.x1 - (row.x1 - dx) * (0.25 + rand() * 0.3);
-    if (used.has(row) && dx > row.x0) dx += 0.04;
-    while (dx < stop) {
-      const d = { t: 0.022 + rand() * 0.03, h: Math.min(0.19 + rand() * 0.08, row.height - 0.02), d: 0.15 + rand() * 0.05 };
-      if (dx + d.t > row.x1) break;
-      const col = new THREE.Color(palette[Math.floor(rand() * palette.length)]).getStyle();
-      const m = makeBook(d, "", col, `deco${col}`);
-      m.position.set(dx + d.t / 2, row.y + d.h / 2, row.z - d.d / 2 + 0.06);
-      row.shelf.userData.bookGroup.add(m);
-      dx += d.t + 0.002;
-    }
   }
 
   if (center) {
@@ -582,8 +598,8 @@ function layoutBooks() {
   let py = DESK_TOP;
   pile.forEach((b, i) => {
     const d = bookDims(b.id);
-    const m = makeBook(d, b.title, mutedColor(b.title), `u${b.id}`);
-    m.rotation.z = Math.PI / 2;
+    const m = makeBook(d, b, `u${b.id}`);
+    m.rotation.z = Math.PI / 2; // 平躺后封面（+x）朝上
     m.rotation.y = (i - 1) * 0.08;
     m.position.set(0.36, py + d.t / 2, -0.66);
     py += d.t;
@@ -760,13 +776,9 @@ async function init() {
     shelfRows.push(...localRows.map((row) => ({ ...row, shelf: s })));
   }
 
-  [-0.45, -0.15, 0.4].forEach((x, i) => {
-    const p = i === 0 ? plantModel : plantModel.clone();
-    p.position.set(x, WIN.y0, BACK_WALL_Z - 0.06);
-    p.rotation.y = i * 1.7;
-    p.scale.setScalar(0.9 + i * 0.15);
-    scene.add(p);
-  });
+  plantModel.position.set(-0.43, DESK_TOP, -0.98); // 书桌左上角
+  plantModel.rotation.y = 0.6;
+  scene.add(plantModel);
 
   shrubModel.traverse((o) => {
     if (o.isMesh) o.material = addWind(o.material.clone(), 0.6);
