@@ -1,390 +1,167 @@
-// 3D 书房：坐在书桌前的椅子上，拖动转头看四周。书库里的书是真立体的书块，
-// 竖着插在两侧书架上；点一本 → 飞到桌上摊开；点摊开的书 → 进阅读页。
-// 桌子右边那摞是最近读过的，点一下换到中间。窗外云在飘、草和灌木随风摆。
-// 模型/贴图来自 Poly Haven（CC0），放在 models/ 下。单位：米，y 朝上，
-// 坐着时面朝 -z（窗户那面墙）。
+// 书房：把那张田园书房插画（study-room.jpg）按 AI 估出来的深度图（study-depth.png）
+// "推"成立体浮雕——从座位上看过去跟原画一模一样，转头/探头时近处的桌椅和远处的窗外
+// 会错开（视差），才有 3D 感。画沿书架和窗户之间的墙折成三联屏：中间是窗和书桌，
+// 两侧书架往人这边折过来，转头就正对着书架。
+// 书库里的书是真 3D 书块，放进画里书架的空格子和桌面上：点书架上的书 → 飞到桌上摊开；
+// 点摊开的书 → 进阅读页；桌子右边那摞是最近读过的。窗外的云、树、草和窗帘在着色器里动。
 import * as THREE from "three";
-import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
-import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
 
 const DESK_KEY = "studyDeskBookId";
 const PILE_SIZE = 3;
-const EYE = new THREE.Vector3(0, 1.18, 0.02);
-const DESK_TOP = 0.8;
-const BACK_WALL_Z = -1.15;
-const WIN = { x0: -0.85, x1: 0.85, y0: 0.95, y1: 2.3 };
-const ROOM = { x0: -1.75, x1: 1.75, z1: 1.6, h: 2.7 };
+
+// ---- 画的坐标系：像素 (u, v)，原图 1774×887 ----
+const IMG_W = 1774;
+const IMG_H = 887;
+const PX = 0.00296; // 每像素多少米（按画里书架约 2 米高定的）
+const PANEL_DIST = 2.6; // 平铺状态下画离眼睛多远
+const FOLD = 0.95; // 两侧书架往里折的角度（弧度，约 55°）
+const SEAM_L = 490; // 左书架和窗户之间那段墙的位置，从这里折
+const SEAM_R = 1290;
+const EYE = new THREE.Vector3(0, (IMG_H - 470) * PX, 0);
+// 画里书架的空格子：x 范围 + 格子底（隔板顶面）的 v。是对着原图逐行扫亮度量出来的
+const SHELF_ROWS = [
+  { side: -1, u0: 136, u1: 426, v: 342 },
+  { side: -1, u0: 136, u1: 426, v: 454 },
+  { side: -1, u0: 136, u1: 426, v: 566 },
+  { side: 1, u0: 1344, u1: 1640, v: 342 },
+  { side: 1, u0: 1344, u1: 1640, v: 454 },
+  { side: 1, u0: 1344, u1: 1640, v: 566 },
+];
+const DESK_CENTER = { u: 860, v: 612 }; // 摊开的书放在画里桌面上的位置
+const DESK_PILE = { u: 1150, v: 606 };
+
+// 深度图的值越大越近（窗外 ≈0，椅子 ≈1）。换算成离眼睛的距离：1/(a·d+b)，
+// 让窗外约 8 米、桌面约 1.4 米、书架约 2 米——桌面按真实书桌大小算出来的距离
+const depthToDist = (d) => 1 / (0.77 * d + 0.125);
 
 const canvas = document.getElementById("scene");
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
-renderer.setPixelRatio(Math.min(devicePixelRatio, 1.75));
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
 renderer.outputColorSpace = THREE.SRGBColorSpace;
-renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 1.05;
-renderer.shadowMap.enabled = true;
-renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.setClearColor(0xe9e2d3);
 
 const scene = new THREE.Scene();
-scene.fog = new THREE.Fog(0xd6e4ee, 30, 260);
-const pmrem = new THREE.PMREMGenerator(renderer);
-scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
-
-const camera = new THREE.PerspectiveCamera(62, 1, 0.05, 600);
-camera.position.copy(EYE);
+const camera = new THREE.PerspectiveCamera(50, 1, 0.05, 100);
 camera.rotation.order = "YXZ";
-const look = { yaw: 0, pitch: -0.2 };
+const look = { yaw: 0, pitch: 0 };
+const time = { value: 0 };
 
-// 风：所有会摆动的东西（草、灌木、树冠、窗帘）共用一个时间 uniform，
-// 在顶点着色器里按高度和位置偏移。偶尔来一阵风靠两个慢正弦相乘做出"阵风"。
-const wind = { value: 0 };
-function addWind(material, strength) {
-  material.onBeforeCompile = (shader) => {
-    shader.uniforms.uTime = wind;
-    shader.vertexShader = shader.vertexShader
-      .replace("#include <common>", "#include <common>\nuniform float uTime;")
-      .replace(
-        "#include <begin_vertex>",
-        `#include <begin_vertex>
-        vec4 wPos = modelMatrix * vec4(position, 1.0);
-        #ifdef USE_INSTANCING
-          wPos = modelMatrix * instanceMatrix * vec4(position, 1.0);
-        #endif
-        float gust = 0.55 + 0.45 * sin(uTime * 0.23) * sin(uTime * 0.11 + 1.3);
-        float w = sin(uTime * 1.6 + wPos.x * 0.7 + wPos.z * 0.45) * 0.7 + sin(uTime * 3.3 + wPos.x * 2.1) * 0.3;
-        float h = max(position.y, 0.0);
-        transformed.x += w * gust * ${strength.toFixed(3)} * h * h;
-        transformed.z += w * gust * ${(strength * 0.4).toFixed(3)} * h * h;`
-      );
-  };
-  return material;
+// ---------- 三联屏的几何：平铺/折叠后的位置（还没按深度推远拉近） ----------
+const panels = [
+  { u0: 0, u1: SEAM_L, pivotU: SEAM_L, rot: FOLD },
+  { u0: SEAM_L, u1: SEAM_R, pivotU: 887, rot: 0, center: true },
+  { u0: SEAM_R, u1: IMG_W, pivotU: SEAM_R, rot: -FOLD },
+];
+for (const p of panels) {
+  p.quat = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), p.rot);
+  // 中间那块的原点在画面正中；两侧的原点在折痕上（中间那块左右边缘的位置）
+  p.origin = new THREE.Vector3(p.center ? 0 : (p.pivotU - 887) * PX, 0, -PANEL_DIST);
+  p.normal = new THREE.Vector3(0, 0, 1).applyQuaternion(p.quat);
+}
+const panelFor = (u) => (u < SEAM_L ? panels[0] : u > SEAM_R ? panels[2] : panels[1]);
+
+// 深度图在 JS 里也要读一份：放书时要知道画里那个点被推到了多远
+let depthData = null;
+function depthAt(u, v) {
+  const x = Math.min(depthData.width - 1, Math.max(0, Math.round((u / IMG_W) * depthData.width)));
+  const y = Math.min(depthData.height - 1, Math.max(0, Math.round((v / IMG_H) * depthData.height)));
+  return depthData.data[(y * depthData.width + x) * 4] / 255;
 }
 
-// ---------- 贴图 ----------
-const texLoader = new THREE.TextureLoader();
-function pbr(name, repeatX, repeatY, tint) {
-  const load = (suffix, srgb) => {
-    const t = texLoader.load(`models/tex/${name}_${suffix}.jpg`);
-    t.wrapS = t.wrapT = THREE.RepeatWrapping;
-    t.repeat.set(repeatX, repeatY);
-    t.anisotropy = 4;
-    if (srgb) t.colorSpace = THREE.SRGBColorSpace;
-    return t;
-  };
-  return new THREE.MeshStandardMaterial({
-    map: load("diff", true),
-    normalMap: load("nor"),
-    roughnessMap: load("rough"),
-    color: tint || 0xffffff,
+// 画上 (u, v) 那个点在世界里的位置：先放到三联屏上，再沿着"眼睛→这个点"的视线
+// 按深度推远或拉近——视线方向不变，所以从座位上看过去画面一点不变形
+function paintPoint(u, v, depth = depthAt(u, v)) {
+  const p = panelFor(u);
+  const local = new THREE.Vector3((u - p.pivotU) * PX, (IMG_H - v) * PX, 0).applyQuaternion(p.quat).add(p.origin);
+  const dir = local.sub(EYE);
+  return EYE.clone().add(dir.multiplyScalar(depthToDist(depth) / PANEL_DIST));
+}
+
+function buildPainting(roomTex, depthTex) {
+  const material = new THREE.ShaderMaterial({
+    transparent: false,
+    uniforms: {
+      uMap: { value: roomTex },
+      uDepth: { value: depthTex },
+      uEye: { value: EYE },
+      uTime: time,
+      uPanelDist: { value: PANEL_DIST },
+    },
+    vertexShader: `
+      uniform sampler2D uDepth; uniform vec3 uEye; uniform float uPanelDist;
+      varying vec2 vUv;
+      void main() {
+        vUv = uv;
+        float d = texture2D(uDepth, uv).r;
+        float dist = 1.0 / (0.77 * d + 0.125);
+        vec3 world = (modelMatrix * vec4(position, 1.0)).xyz;
+        vec3 p = uEye + (world - uEye) * (dist / uPanelDist);
+        gl_Position = projectionMatrix * viewMatrix * vec4(p, 1.0);
+      }`,
+    fragmentShader: `
+      uniform sampler2D uMap; uniform float uTime; varying vec2 vUv;
+      float hash(vec2 p){ return fract(sin(dot(p, vec2(127.1,311.7))) * 43758.5453); }
+      float noise(vec2 p){ vec2 i=floor(p), f=fract(p); f=f*f*(3.0-2.0*f);
+        return mix(mix(hash(i),hash(i+vec2(1,0)),f.x), mix(hash(i+vec2(0,1)),hash(i+vec2(1,1)),f.x), f.y); }
+      float fbm(vec2 p){ float v=0.0, a=0.5; for(int i=0;i<5;i++){ v+=a*noise(p); p*=2.03; a*=0.5; } return v; }
+      float inRect(vec2 px, vec4 r){ return step(r.x, px.x) * step(px.x, r.z) * step(r.y, px.y) * step(px.y, r.w); }
+      void main() {
+        vec2 px = vec2(vUv.x * ${IMG_W}.0, (1.0 - vUv.y) * ${IMG_H}.0);
+        vec2 uv = vUv;
+        // 阵风：两个慢正弦相乘，大部分时候微风，偶尔来一阵
+        float gust = 0.5 + 0.5 * sin(uTime * 0.31) * sin(uTime * 0.13 + 1.7);
+        vec3 base = texture2D(uMap, uv).rgb;
+        // 窗外的树和草（窗洞里偏绿的像素）：按位置错开相位轻轻摆
+        float win = inRect(px, vec4(605.0, 45.0, 1170.0, 495.0));
+        float green = smoothstep(0.02, 0.08, base.g - max(base.r, base.b) * 0.92);
+        float sway = sin(uTime * 1.8 + px.y * 0.09 + px.x * 0.02) * 0.7 + sin(uTime * 3.4 + px.x * 0.15) * 0.3;
+        uv.x += win * green * sway * (0.6 + gust) * 1.6 / ${IMG_W}.0;
+        // 窗帘下摆：越往下摆得越多
+        float curtain = inRect(px, vec4(498.0, 0.0, 605.0, 560.0)) + inRect(px, vec4(1172.0, 0.0, 1282.0, 560.0));
+        uv.x += curtain * smoothstep(150.0, 560.0, px.y) * sin(uTime * 1.1 + px.y * 0.012) * (0.4 + gust) * 2.5 / ${IMG_W}.0;
+        vec3 col = texture2D(uMap, uv).rgb;
+        // 窗外天空（窗洞上半部分里偏蓝或很亮的像素）：叠一层会飘的薄云
+        float skyish = max(smoothstep(0.03, 0.1, col.b - col.r), smoothstep(0.86, 0.93, dot(col, vec3(0.3, 0.59, 0.11))));
+        float sky = win * (1.0 - smoothstep(230.0, 300.0, px.y)) * skyish * (1.0 - green);
+        vec2 cuv = vec2(px.x / 260.0, px.y / 90.0);
+        float c = smoothstep(0.5, 0.75, fbm(cuv + vec2(uTime * 0.05, 0.0)) * 0.7 + fbm(cuv * 2.3 - vec2(uTime * 0.03, 0.0)) * 0.3);
+        col = mix(col, vec3(1.0), sky * c * 0.75);
+        gl_FragColor = vec4(col, 1.0);
+        #include <colorspace_fragment>
+      }`,
   });
-}
+  // 贴图本身已经是 sRGB 的颜色，直接输出、不再做色调映射，画面颜色跟原画一致
+  roomTex.colorSpace = THREE.SRGBColorSpace;
 
-// ---------- 房间 ----------
-function box(w, h, d, mat, x, y, z) {
-  const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
-  m.position.set(x, y, z);
-  m.castShadow = m.receiveShadow = true;
-  scene.add(m);
-  return m;
-}
-
-function buildRoom() {
-  const floorMat = pbr("old_wooden_floor_02", 2, 1.6, 0xf4ece0);
-  const wallMat = pbr("painted_plaster_wall", 1.6, 1.2, 0xfbf7ef);
-  // 墙裙用浅奶油色的漆面，不用深色木纹——深木色一进阴影就发闷发暗
-  const woodMat = new THREE.MeshStandardMaterial({ color: 0xe8dcc6, roughness: 0.85 });
-  const white = new THREE.MeshStandardMaterial({ color: 0xf7f4ee, roughness: 0.7 });
-
-  const W = ROOM.x1 - ROOM.x0;
-  const D = ROOM.z1 - BACK_WALL_Z;
-  const cz = (ROOM.z1 + BACK_WALL_Z) / 2;
-  box(W, 0.02, D, floorMat, 0, -0.01, cz);
-  box(W, 0.02, D, white, 0, ROOM.h + 0.01, cz);
-  box(0.1, ROOM.h, D, wallMat, ROOM.x0 - 0.05, ROOM.h / 2, cz);
-  box(0.1, ROOM.h, D, wallMat, ROOM.x1 + 0.05, ROOM.h / 2, cz);
-  box(W, ROOM.h, 0.1, wallMat, 0, ROOM.h / 2, ROOM.z1 + 0.05);
-
-  // 后墙挖一个窗洞：洞的上下左右四块墙
-  const t = 0.25;
-  const wz = BACK_WALL_Z - t / 2;
-  box(WIN.x0 - ROOM.x0, ROOM.h, t, wallMat, (ROOM.x0 + WIN.x0) / 2, ROOM.h / 2, wz);
-  box(ROOM.x1 - WIN.x1, ROOM.h, t, wallMat, (ROOM.x1 + WIN.x1) / 2, ROOM.h / 2, wz);
-  box(WIN.x1 - WIN.x0, WIN.y0, t, wallMat, 0, WIN.y0 / 2, wz);
-  box(WIN.x1 - WIN.x0, ROOM.h - WIN.y1, t, wallMat, 0, (ROOM.h + WIN.y1) / 2, wz);
-
-  // 墙裙（下半截木护墙板），三面墙都有，窗下那段是窗台下的墙
-  const wh = 0.9;
-  box(WIN.x0 - ROOM.x0, wh, 0.02, woodMat, (ROOM.x0 + WIN.x0) / 2, wh / 2, BACK_WALL_Z + 0.01);
-  box(ROOM.x1 - WIN.x1, wh, 0.02, woodMat, (ROOM.x1 + WIN.x1) / 2, wh / 2, BACK_WALL_Z + 0.01);
-  box(WIN.x1 - WIN.x0, wh, 0.02, woodMat, 0, wh / 2, BACK_WALL_Z + 0.01);
-  box(0.02, wh, D, woodMat, ROOM.x0 + 0.01, wh / 2, cz);
-  box(0.02, wh, D, woodMat, ROOM.x1 - 0.01, wh / 2, cz);
-  box(W, 0.04, 0.03, woodMat, 0, wh + 0.02, BACK_WALL_Z + 0.02);
-
-  // 窗台、窗框
-  box(WIN.x1 - WIN.x0 + 0.2, 0.04, 0.26, white, 0, WIN.y0 - 0.02, BACK_WALL_Z - 0.02);
-  const fz = BACK_WALL_Z - t + 0.04;
-  box(0.06, WIN.y1 - WIN.y0, 0.08, white, WIN.x0 + 0.03, (WIN.y0 + WIN.y1) / 2, fz);
-  box(0.06, WIN.y1 - WIN.y0, 0.08, white, WIN.x1 - 0.03, (WIN.y0 + WIN.y1) / 2, fz);
-  box(WIN.x1 - WIN.x0, 0.06, 0.08, white, 0, WIN.y1 - 0.03, fz);
-  box(WIN.x1 - WIN.x0, 0.05, 0.08, white, 0, WIN.y0 + 0.025, fz);
-
-  // 两扇往外推开的窗扇：外框 + 2×4 格子 + 一点点玻璃反光
-  const glass = new THREE.MeshStandardMaterial({ color: 0xdfeaf2, transparent: true, opacity: 0.16, roughness: 0.05, metalness: 0.2 });
-  const sashW = (WIN.x1 - WIN.x0) / 2;
-  const sashH = WIN.y1 - WIN.y0 - 0.1;
-  for (const side of [-1, 1]) {
-    const hinge = new THREE.Group();
-    hinge.position.set(side < 0 ? WIN.x0 + 0.06 : WIN.x1 - 0.06, WIN.y0 + 0.05, fz - 0.04);
-    hinge.rotation.y = side * -1.25;
-    scene.add(hinge);
-    const sx = side < 0 ? sashW / 2 : -sashW / 2;
-    const bar = (w, h, x, y) => {
-      const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, 0.035), white);
-      m.position.set(x, y, 0);
-      m.castShadow = true;
-      hinge.add(m);
-    };
-    bar(0.045, sashH, sx - sashW / 2 + 0.02, sashH / 2);
-    bar(0.045, sashH, sx + sashW / 2 - 0.02, sashH / 2);
-    bar(sashW, 0.045, sx, 0.02);
-    bar(sashW, 0.045, sx, sashH - 0.02);
-    bar(0.025, sashH, sx, sashH / 2);
-    for (let i = 1; i < 4; i++) bar(sashW, 0.025, sx, (sashH * i) / 4);
-    const g = new THREE.Mesh(new THREE.PlaneGeometry(sashW - 0.04, sashH - 0.04), glass);
-    g.position.set(sx, sashH / 2, 0);
-    hinge.add(g);
-  }
-
-  // 窗帘：一块竖着褶皱的半透明布，下摆随风轻轻摆
-  const curtainMat = addWind(
-    new THREE.MeshStandardMaterial({ color: 0xfbf8f1, transparent: true, opacity: 0.88, side: THREE.DoubleSide, roughness: 0.95 }),
-    0.04
-  );
-  for (const side of [-1, 1]) {
-    const geo = new THREE.PlaneGeometry(0.42, 1.75, 24, 8);
+  for (const p of panels) {
+    const wPx = p.u1 - p.u0;
+    const geo = new THREE.PlaneGeometry(1, 1, Math.ceil(wPx / 4), Math.ceil(IMG_H / 4));
     const pos = geo.attributes.position;
-    for (let i = 0; i < pos.count; i++) pos.setZ(i, Math.sin(pos.getX(i) * 38) * 0.025);
-    // 局部 y = 离窗帘杆的距离（0 在杆上），整块再绕 x 翻 180° 垂下来——风按 y² 吹，只有下摆会动
-    geo.translate(0, 0.875, 0);
-    geo.computeVertexNormals();
-    const c = new THREE.Mesh(geo, curtainMat);
-    c.position.set(side * (WIN.x1 + 0.08), WIN.y1 + 0.2, BACK_WALL_Z + 0.06);
-    c.rotation.x = Math.PI;
-    scene.add(c);
-  }
-  box(WIN.x1 - WIN.x0 + 0.5, 0.025, 0.025, woodMat, 0, WIN.y1 + 0.22, BACK_WALL_Z + 0.06);
-}
-
-// ---------- 窗外 ----------
-function buildOutside() {
-  // 天空：渐变 + 两层缓慢漂移的分形噪声云
-  const sky = new THREE.Mesh(
-    new THREE.SphereGeometry(500, 32, 16),
-    new THREE.ShaderMaterial({
-      side: THREE.BackSide,
-      depthWrite: false,
-      fog: false,
-      uniforms: { uTime: wind },
-      vertexShader: `varying vec3 vDir; void main(){ vDir = normalize(position); gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }`,
-      fragmentShader: `
-        uniform float uTime; varying vec3 vDir;
-        float hash(vec2 p){ return fract(sin(dot(p, vec2(127.1,311.7))) * 43758.5453); }
-        float noise(vec2 p){ vec2 i=floor(p), f=fract(p); f=f*f*(3.0-2.0*f);
-          return mix(mix(hash(i),hash(i+vec2(1,0)),f.x), mix(hash(i+vec2(0,1)),hash(i+vec2(1,1)),f.x), f.y); }
-        float fbm(vec2 p){ float v=0.0, a=0.5; for(int i=0;i<5;i++){ v+=a*noise(p); p*=2.03; a*=0.5; } return v; }
-        void main(){
-          float h = max(vDir.y, 0.0);
-          vec3 col = mix(vec3(0.70,0.83,0.95), vec3(0.30,0.55,0.90), pow(h, 0.5));
-          // 云往一个方向慢慢飘，同时自己缓慢变形（第二层噪声用不同速度），不会像一张贴图在平移
-          vec2 uv = vDir.xz / (vDir.y + 0.12) * 1.6;
-          float n = fbm(uv + vec2(uTime * 0.13, uTime * 0.03)) * 0.75 + fbm(uv * 2.2 - vec2(uTime * 0.05, 0.0)) * 0.25;
-          float c = smoothstep(0.5, 0.66, n) * smoothstep(0.0, 0.18, h);
-          // 云的底部稍微暗一点，才有体积感，不是一层白雾
-          vec3 cloud = mix(vec3(0.86,0.88,0.92), vec3(1.0), smoothstep(0.55, 0.8, n));
-          col = mix(col, cloud, c * 0.95);
-          gl_FragColor = vec4(col, 1.0);
-          #include <tonemapping_fragment>
-          #include <colorspace_fragment>
-        }`,
-    })
-  );
-  scene.add(sky);
-
-  const ground = new THREE.Mesh(
-    new THREE.PlaneGeometry(800, 800),
-    new THREE.MeshStandardMaterial({ color: 0x8fae6a, roughness: 1 })
-  );
-  ground.rotation.x = -Math.PI / 2;
-  ground.position.set(0, -0.02, -400);
-  ground.receiveShadow = true;
-  scene.add(ground);
-
-  // 远处几道缓坡和一排树：压扁的球，雾会把它们淡进天色里
-  const hillMat = new THREE.MeshStandardMaterial({ color: 0x86a866, roughness: 1 });
-  [[-60, -140, 70, 9], [40, -170, 90, 12], [120, -120, 60, 7], [-150, -110, 80, 10]].forEach(([x, z, r, h]) => {
-    const m = new THREE.Mesh(new THREE.SphereGeometry(1, 32, 12), hillMat);
-    m.scale.set(r, h, r * 0.6);
-    m.position.set(x, -1, z);
-    scene.add(m);
-  });
-
-  const leafMat = addWind(new THREE.MeshStandardMaterial({ color: 0x7aa05c, roughness: 0.95 }), 0.002);
-  const trunkMat = new THREE.MeshStandardMaterial({ color: 0x6d5a45, roughness: 1 });
-  const rand = mulberry(7);
-  for (let i = 0; i < 16; i++) {
-    const x = (rand() - 0.5) * 90;
-    const z = -14 - rand() * 50;
-    if (Math.abs(x) < 4 && z > -20) continue;
-    const s = 2.5 + rand() * 3;
-    const tree = new THREE.Group();
-    const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.12 * s, 0.18 * s, s * 1.2, 7), trunkMat);
-    trunk.position.y = s * 0.6;
-    tree.add(trunk);
-    for (let k = 0; k < 4; k++) {
-      const geo = new THREE.IcosahedronGeometry(s * (0.55 + rand() * 0.3), 3);
-      geo.translate((rand() - 0.5) * s * 0.7, s * (1.3 + rand() * 0.6), (rand() - 0.5) * s * 0.5);
-      tree.add(new THREE.Mesh(geo, leafMat));
+    const uvs = geo.attributes.uv;
+    for (let i = 0; i < pos.count; i++) {
+      const u = p.u0 + uvs.getX(i) * wPx;
+      const v = (1 - uvs.getY(i)) * IMG_H;
+      pos.setXYZ(i, (u - p.pivotU) * PX, (IMG_H - v) * PX, 0);
+      uvs.setXY(i, u / IMG_W, 1 - v / IMG_H);
     }
-    tree.position.set(x, 0, z);
-    tree.traverse((o) => (o.castShadow = true));
-    scene.add(tree);
+    const mesh = new THREE.Mesh(geo, material);
+    mesh.position.copy(p.origin);
+    mesh.quaternion.copy(p.quat);
+    mesh.frustumCulled = false; // 顶点在着色器里被推远拉近了，包围盒不准
+    scene.add(mesh);
   }
-
-  // 近处的草：几千根细叶片一次画完（InstancedMesh），顶点着色器里随风摆
-  const blade = new THREE.PlaneGeometry(0.035, 1, 1, 4);
-  const p = blade.attributes.position;
-  for (let i = 0; i < p.count; i++) {
-    const y = p.getY(i) + 0.5;
-    p.setX(i, p.getX(i) * (1 - y));
-    p.setY(i, y);
-  }
-  const grassMat = addWind(new THREE.MeshStandardMaterial({ color: 0x86ad5c, side: THREE.DoubleSide, roughness: 1 }), 0.22);
-  const N = 6000;
-  const grass = new THREE.InstancedMesh(blade, grassMat, N);
-  const m4 = new THREE.Matrix4();
-  const q = new THREE.Quaternion();
-  const color = new THREE.Color();
-  // 坐着从窗台上方往外看，大约 3 米以外的地面才看得到，近处不用种
-  for (let i = 0; i < N; i++) {
-    const x = (rand() - 0.5) * 10;
-    const z = BACK_WALL_Z - 2 - rand() * 12;
-    q.setFromAxisAngle(new THREE.Vector3(0, 1, 0), rand() * Math.PI);
-    const h = 0.25 + rand() * 0.45;
-    m4.compose(new THREE.Vector3(x, 0, z), q, new THREE.Vector3(1, h, 1));
-    grass.setMatrixAt(i, m4);
-    grass.setColorAt(i, color.setHSL(0.22 + rand() * 0.05, 0.4, 0.38 + rand() * 0.12));
-  }
-  scene.add(grass);
-}
-
-// 固定种子的伪随机：每次打开书房，窗外的树和草长得都一样
-function mulberry(a) {
-  return () => {
-    a |= 0;
-    a = (a + 0x6d2b79f5) | 0;
-    let t = Math.imul(a ^ (a >>> 15), 1 | a);
-    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
 }
 
 function buildLights() {
-  // 光偏中性白：暖黄的光会把木头全染成橙红，正是"油腻"感的来源
-  scene.add(new THREE.HemisphereLight(0xeef4ff, 0xbdb4a4, 1.35));
-  const sun = new THREE.DirectionalLight(0xfffaf0, 2.4);
-  sun.position.set(2.5, 6, -8);
-  sun.target.position.set(0, 0.8, -0.3);
-  sun.castShadow = true;
-  sun.shadow.mapSize.set(2048, 2048);
-  sun.shadow.camera.left = -4;
-  sun.shadow.camera.right = 4;
-  sun.shadow.camera.top = 4;
-  sun.shadow.camera.bottom = -4;
-  sun.shadow.camera.far = 30;
-  sun.shadow.bias = -0.0005;
-  sun.shadow.normalBias = 0.02;
-  scene.add(sun, sun.target);
-}
-
-// ---------- 模型 ----------
-const gltfLoader = new GLTFLoader();
-function loadModel(name) {
-  return new Promise((resolve, reject) =>
-    gltfLoader.load(`models/${name}/${name}.gltf`, (g) => {
-      g.scene.traverse((o) => {
-        if (!o.isMesh) return;
-        o.castShadow = o.receiveShadow = true;
-        // 压低环境反射：亮漆一样的高光是"油腻"的另一个来源
-        o.material.envMapIntensity = 0.35;
-      });
-      resolve(g.scene);
-    }, undefined, reject)
-  );
-}
-
-// 模型自带的是深红棕色的亮漆木：把贴图去掉一部分饱和度、提亮，再换成统一的哑光，
-// 变成画里那种浅色原木。直接改像素，不用 ctx.filter（iPad 上的 Safari 不一定支持）。
-function softenWood(model, saturation, brightness) {
-  model.traverse((o) => {
-    if (!o.isMesh || !o.material.map) return;
-    const mat = o.material;
-    const img = mat.map.image;
-    const c = document.createElement("canvas");
-    c.width = img.width;
-    c.height = img.height;
-    const ctx = c.getContext("2d");
-    ctx.drawImage(img, 0, 0);
-    const data = ctx.getImageData(0, 0, c.width, c.height);
-    const px = data.data;
-    for (let i = 0; i < px.length; i += 4) {
-      const grey = px[i] * 0.3 + px[i + 1] * 0.59 + px[i + 2] * 0.11;
-      for (let k = 0; k < 3; k++) px[i + k] = Math.min(255, (grey + (px[i + k] - grey) * saturation) * brightness);
-    }
-    ctx.putImageData(data, 0, 0);
-    const tex = new THREE.CanvasTexture(c);
-    tex.colorSpace = THREE.SRGBColorSpace;
-    tex.flipY = mat.map.flipY;
-    tex.anisotropy = 4;
-    mat.map = tex;
-    mat.roughnessMap = null;
-    mat.roughness = 0.82;
-  });
-}
-
-// 书架每一层的高度不手量：从上往下打射线，打到朝上的面就是一层隔板，
-// 再往上打一根看头顶有没有挡板（没有就是书架顶面，不能放书），
-// 往左右打看两侧板在哪。换书架模型也不用改坐标。
-function measureShelves(shelf) {
-  shelf.updateMatrixWorld(true);
-  const ray = new THREE.Raycaster();
-  const down = new THREE.Vector3(0, -1, 0);
-  const up = new THREE.Vector3(0, 1, 0);
-  const box3 = new THREE.Box3().setFromObject(shelf);
-  const front = box3.max.z - 0.12;
-  const rows = [];
-  let y = box3.max.y + 0.05;
-  while (y > box3.min.y + 0.02) {
-    ray.set(new THREE.Vector3(shelf.position.x, y, front), down);
-    const hit = ray.intersectObject(shelf, true)[0];
-    if (!hit) break;
-    const surface = hit.point.y;
-    ray.set(new THREE.Vector3(shelf.position.x, surface + 0.01, front), up);
-    const ceil = ray.intersectObject(shelf, true)[0];
-    if (ceil && ceil.point.y - surface > 0.12) {
-      const mid = surface + 0.06;
-      const side = (dir) => {
-        ray.set(new THREE.Vector3(shelf.position.x, mid, front), new THREE.Vector3(dir, 0, 0));
-        const h = ray.intersectObject(shelf, true)[0];
-        return h ? h.point.x : shelf.position.x + dir * 0.6;
-      };
-      rows.push({ y: surface, height: ceil.point.y - surface, x0: side(-1) + 0.015, x1: side(1) - 0.015, z: front });
-    }
-    y = surface - 0.03;
-  }
-  return rows;
+  // 光大致从窗户那边来，跟画里的光向一致；书是唯一受光照的东西
+  scene.add(new THREE.HemisphereLight(0xffffff, 0xd8cbb0, 1.5));
+  const sun = new THREE.DirectionalLight(0xfffaf0, 1.4);
+  sun.position.set(0.6, 3, -3);
+  scene.add(sun);
 }
 
 // ---------- 书 ----------
+const texLoader = new THREE.TextureLoader();
 const spineTexCache = new Map();
 function mutedColor(title) {
   const hue = Number(/hsl\((\d+)/.exec(colorForTitle(title))[1]);
@@ -489,9 +266,7 @@ function makeBook(dims, b, key) {
   const front = b.coverData ? new THREE.MeshStandardMaterial({ map: coverTexture(key, b.coverData), roughness: 0.7 }) : back;
   const spine = new THREE.MeshStandardMaterial({ map: spineTexture(key, b.title, color, b.coverData), roughness: 0.7 });
   const pages = pageEdgeMaterial();
-  const m = new THREE.Mesh(new THREE.BoxGeometry(dims.t, dims.h, dims.d), [front, back, pages, pages, spine, pages]);
-  m.castShadow = m.receiveShadow = true;
-  return m;
+  return new THREE.Mesh(new THREE.BoxGeometry(dims.t, dims.h, dims.d), [front, back, pages, pages, spine, pages]);
 }
 
 function bookDims(id) {
@@ -530,8 +305,6 @@ function makeOpenBook(b) {
     const top = side < 0 ? leftTop : rightTop;
     const block = new THREE.Mesh(new THREE.BoxGeometry(W, 0.014, D), [edge, edge, top, edge, edge, edge]);
     block.position.set(side * W / 2, 0.011, 0);
-    board.castShadow = block.castShadow = true;
-    board.receiveShadow = block.receiveShadow = true;
     half.add(board, block);
     half.rotation.z = side * -0.06;
     g.add(half);
@@ -539,10 +312,28 @@ function makeOpenBook(b) {
   return g;
 }
 
+// 画是平面贴图，接不住真实的影子——在桌上的书底下垫一块柔和的暗斑，书才"落"在桌面上
+let blobTex = null;
+function contactShadow(w, d) {
+  if (!blobTex) {
+    const c = document.createElement("canvas");
+    c.width = c.height = 128;
+    const ctx = c.getContext("2d");
+    const g = ctx.createRadialGradient(64, 64, 10, 64, 64, 64);
+    g.addColorStop(0, "rgba(60,40,20,0.45)");
+    g.addColorStop(1, "rgba(60,40,20,0)");
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, 128, 128);
+    blobTex = new THREE.CanvasTexture(c);
+  }
+  const m = new THREE.Mesh(new THREE.PlaneGeometry(w, d), new THREE.MeshBasicMaterial({ map: blobTex, transparent: true, depthWrite: false }));
+  m.rotation.x = -Math.PI / 2;
+  return m;
+}
+
 // ---------- 场景里的书：书架 + 桌面，书库变了就整体重摆 ----------
 const bookLayer = new THREE.Group();
 scene.add(bookLayer);
-let shelfRows = [];
 let books = [];
 const clickable = [];
 
@@ -554,59 +345,86 @@ function deskBooks() {
   return { center, pile };
 }
 
+// 桌上的书放在画里桌面那个点被推到的位置，平躺（不跟着三联屏转）
+function deskPose(spot) {
+  return paintPoint(spot.u, spot.v);
+}
+
 function layoutBooks() {
   bookLayer.clear();
-  for (const s of new Set(shelfRows.map((row) => row.shelf))) s.userData.bookGroup.clear();
   clickable.length = 0;
   const { center, pile } = deskBooks();
   const onDesk = new Set([center, ...pile]);
 
   // 书架上只放书库里真实的书（跟书架首页同一份数据、同样的顺序和封面），
-  // 从视线高度附近的格子开始放，伸手就够得着
-  const userRows = shelfRows.slice().sort((a, b) => Math.abs(a.y - 1.1) - Math.abs(b.y - 1.1));
+  // 从视线高度附近的格子开始、左右两个书架轮流放
+  const rows = SHELF_ROWS.slice().sort((a, b) => Math.abs(a.v - 454) - Math.abs(b.v - 454) || a.side - b.side);
+  // 书立在格子最里面：深度取隔板线往上一点（格子背板）的值，而不是隔板前沿——
+  // 不然书会从隔板外沿往外伸、悬在半空
+  const backDepth = (row, u) => depthAt(u, row.v - 40);
+  const metersPerPx = (row) => paintPoint(row.u0, row.v, backDepth(row, row.u0)).distanceTo(paintPoint(row.u1, row.v, backDepth(row, row.u0))) / (row.u1 - row.u0);
   let r = 0;
-  let x = userRows.length ? userRows[0].x0 : 0;
+  let u = rows[0].u0;
+  let k = metersPerPx(rows[0]);
   for (const b of books) {
-    if (onDesk.has(b) || !userRows.length) continue;
+    if (onDesk.has(b)) continue;
     const d = bookDims(b.id);
-    if (x + d.t > userRows[r].x1) {
+    if (u + d.t / k > rows[r].u1) {
       r++;
-      // shortcut: 书架放满（几百本）后多出来的书不显示；真到这个量再加第三个书架
-      if (r >= userRows.length) break;
-      x = userRows[r].x0;
+      // shortcut: 6 个格子大约放 120 本，再多的不显示；书真多到这个量再加翻页
+      if (r >= rows.length) break;
+      u = rows[r].u0;
+      k = metersPerPx(rows[r]);
     }
-    const row = userRows[r];
+    const row = rows[r];
+    const p = panelFor(row.u0);
+    const h = Math.min(d.h, 104 * k * 0.9); // 格子大约 104 像素高
     const m = makeBook(d, b, `u${b.id}`);
-    m.position.set(x + d.t / 2, row.y + Math.min(d.h, row.height - 0.02) / 2, row.z - d.d / 2 + 0.06);
-    m.scale.y = Math.min(1, (row.height - 0.02) / d.h);
-    m.userData = { book: b, action: "shelf", home: m.position.clone() };
-    row.shelf.userData.bookGroup.add(m);
+    m.scale.y = h / d.h;
+    m.quaternion.copy(p.quat);
+    const cu = u + d.t / k / 2;
+    const foot = paintPoint(cu, row.v, backDepth(row, cu));
+    m.position.copy(foot).addScaledVector(p.normal, d.d / 2).add(new THREE.Vector3(0, h / 2, 0));
+    m.userData = { book: b, action: "shelf", home: m.position.clone(), normal: p.normal };
+    bookLayer.add(m);
     clickable.push(m);
-    x += d.t + 0.002;
+    u += (d.t + 0.002) / k;
   }
 
   if (center) {
+    const pos = deskPose(DESK_CENTER);
     const open = makeOpenBook(center);
-    open.position.set(-0.08, DESK_TOP, -0.62);
-    open.rotation.y = 0.05;
+    open.position.copy(pos);
+    // 画里的视线只比桌面高一点，书平放几乎是贴着边看——远端翘起来一些（像靠在书立上），书页才看得见
+    open.rotation.set(0.32, 0.05, 0);
+    open.scale.setScalar(1.25);
     open.traverse((o) => (o.userData = { book: center, action: "open" }));
     open.userData.isOpenBook = true;
     bookLayer.add(open);
     clickable.push(open);
+    const sh = contactShadow(0.42, 0.32);
+    sh.position.copy(pos).add(new THREE.Vector3(0, 0.002, 0));
+    bookLayer.add(sh);
   }
-  // 最近读过的一摞：平躺着叠起来，书脊朝着人
-  let py = DESK_TOP;
+  // 最近读过的一摞：平躺着叠起来，书脊朝着人，封面（+x）朝上
+  const pilePos = deskPose(DESK_PILE);
+  let py = pilePos.y;
   pile.forEach((b, i) => {
     const d = bookDims(b.id);
     const m = makeBook(d, b, `u${b.id}`);
-    m.rotation.z = Math.PI / 2; // 平躺后封面（+x）朝上
+    m.rotation.z = Math.PI / 2;
     m.rotation.y = (i - 1) * 0.08;
-    m.position.set(0.36, py + d.t / 2, -0.66);
+    m.position.set(pilePos.x, py + d.t / 2, pilePos.z);
     py += d.t;
     m.userData = { book: b, action: "pile" };
     bookLayer.add(m);
     clickable.push(m);
   });
+  if (pile.length) {
+    const sh = contactShadow(0.36, 0.3);
+    sh.position.copy(pilePos).add(new THREE.Vector3(0, 0.002, 0));
+    bookLayer.add(sh);
+  }
 }
 
 // ---------- 动画：选书、翻开 ----------
@@ -620,24 +438,20 @@ let busy = false;
 async function pickFromShelf(mesh) {
   busy = true;
   mesh.userData.flying = true;
-  // 书原本挂在书架下面（书架坐标系），先换挂到场景上、保持世界位置不变，再按世界坐标飞
-  const out = new THREE.Vector3(0, 0, 1).transformDirection(mesh.parent.matrixWorld).multiplyScalar(0.18);
-  scene.attach(mesh);
   const from = mesh.position.clone();
   const qFrom = mesh.quaternion.clone();
-  const lifted = from.clone().add(out);
-  const to = new THREE.Vector3(-0.08, DESK_TOP + 0.03, -0.62);
+  const lifted = from.clone().addScaledVector(mesh.userData.normal, 0.18);
+  const to = deskPose(DESK_CENTER).add(new THREE.Vector3(0, 0.03, 0));
   // 落地姿势：平躺（厚度朝上），书脊朝左、书的长边沿着桌子纵深，跟摊开那本的朝向一致
   const qTo = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, -Math.PI / 2, Math.PI / 2));
   await tween(260, (t) => mesh.position.lerpVectors(from, lifted, ease(t)));
-  await tween(750, (t) => {
+  await tween(800, (t) => {
     const e = ease(t);
     mesh.position.lerpVectors(lifted, to, e);
     mesh.position.y += Math.sin(e * Math.PI) * 0.25;
     mesh.quaternion.slerpQuaternions(qFrom, qTo, e);
   });
   localStorage.setItem(DESK_KEY, String(mesh.userData.book.id));
-  mesh.removeFromParent(); // 它已经不在书架的子物体里了，layoutBooks 清不到它
   layoutBooks();
   busy = false;
 }
@@ -645,21 +459,24 @@ async function pickFromShelf(mesh) {
 async function openBook(book) {
   busy = true;
   document.getElementById("fadeOverlay").classList.add("show");
+  const target = deskPose(DESK_CENTER);
   const from = camera.position.clone();
-  const to = new THREE.Vector3(-0.08, DESK_TOP + 0.32, -0.42);
+  const to = target.clone().add(new THREE.Vector3(0, 0.38, 0.22));
   const yaw0 = look.yaw, pitch0 = look.pitch;
+  const yawTo = Math.atan2(-(target.x - to.x), -(target.z - to.z));
   await tween(900, (t) => {
     const e = ease(t);
     camera.position.lerpVectors(from, to, e);
-    look.yaw = yaw0 * (1 - e);
-    look.pitch = pitch0 + (-1.15 - pitch0) * e;
+    look.yaw = yaw0 + (yawTo - yaw0) * e;
+    look.pitch = pitch0 + (-1.05 - pitch0) * e;
   });
   location.href = `reader.html?id=${book.id}&from=study`;
 }
 
-// ---------- 交互：拖动转头 + 点书 ----------
+// ---------- 交互：拖动转头 + 鼠标位置带一点探头视差 + 点书 ----------
 const raycaster = new THREE.Raycaster();
 const ndc = new THREE.Vector2();
+const lean = new THREE.Vector2(); // -1..1，鼠标在屏幕上的位置 → 头往那边探一点
 let drag = null;
 let hovered = null;
 
@@ -677,9 +494,10 @@ canvas.addEventListener("pointerdown", (e) => {
   try {
     canvas.setPointerCapture(e.pointerId); // 拖出画布外也继续跟手
   } catch {}
-  drag ={ x: e.clientX, y: e.clientY, yaw: look.yaw, pitch: look.pitch, moved: false };
+  drag = { x: e.clientX, y: e.clientY, yaw: look.yaw, pitch: look.pitch, moved: false };
 });
 canvas.addEventListener("pointermove", (e) => {
+  if (e.pointerType === "mouse") lean.set((e.clientX / innerWidth) * 2 - 1, (e.clientY / innerHeight) * 2 - 1);
   if (drag) {
     const dx = e.clientX - drag.x;
     const dy = e.clientY - drag.y;
@@ -687,9 +505,9 @@ canvas.addEventListener("pointermove", (e) => {
     drag.moved = true;
     canvas.classList.add("dragging");
     document.getElementById("hint").classList.add("hide");
-    const k = 2.2 / innerHeight; // 拖满一屏高大约转 125°
-    look.yaw = THREE.MathUtils.clamp(drag.yaw + dx * k, -1.75, 1.75);
-    look.pitch = THREE.MathUtils.clamp(drag.pitch + dy * k, -0.75, 0.45);
+    const k = 1.6 / innerHeight;
+    look.yaw = THREE.MathUtils.clamp(drag.yaw + dx * k, -yawRange.max, yawRange.max);
+    look.pitch = THREE.MathUtils.clamp(drag.pitch + dy * k, pitchRange.min, pitchRange.max);
     return;
   }
   if (e.pointerType === "mouse") {
@@ -714,19 +532,42 @@ canvas.addEventListener("pointerup", (e) => {
 canvas.addEventListener("pointercancel", () => (drag = null));
 
 // ---------- 主循环 ----------
+// 画在眼睛上下各覆盖多少度：超出去就是画的边，后面什么都没有。视野和低头抬头的
+// 范围都按这个收住，保证任何时候都看不到画的边缘
+const PAINT_DOWN = Math.atan(EYE.y / PANEL_DIST);
+const PAINT_UP = Math.atan((IMG_H * PX - EYE.y) / PANEL_DIST);
+const pitchRange = { min: 0, max: 0 };
+const yawRange = { max: FOLD };
+// 左右能转多少：画最左/最右那一列（按深度推过之后）刚好碰到屏幕边就停
+function updateYawRange() {
+  if (!depthData) return;
+  const hfov = 2 * Math.atan(Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)) * camera.aspect);
+  const edge = (u) => {
+    const p = paintPoint(u, 443).sub(EYE);
+    return Math.abs(Math.atan2(-p.x, -p.z));
+  };
+  yawRange.max = Math.max(0, Math.min(edge(2), edge(IMG_W - 2)) - hfov / 2 - 0.04);
+  look.yaw = THREE.MathUtils.clamp(look.yaw, -yawRange.max, yawRange.max);
+}
 function resize() {
   renderer.setSize(innerWidth, innerHeight, false);
   camera.aspect = innerWidth / innerHeight;
-  // 竖屏时视野自动放宽一点，不然只看得到书桌中间一小块
-  camera.fov = camera.aspect < 1 ? 78 : 62;
+  const vfov = Math.min(46, THREE.MathUtils.radToDeg(PAINT_DOWN + PAINT_UP) - 4);
+  camera.fov = vfov;
   camera.updateProjectionMatrix();
+  const half = THREE.MathUtils.degToRad(vfov / 2);
+  pitchRange.min = -(PAINT_DOWN - half - 0.02);
+  pitchRange.max = PAINT_UP - half - 0.02;
+  look.pitch = THREE.MathUtils.clamp(look.pitch, pitchRange.min, pitchRange.max);
+  updateYawRange();
 }
 addEventListener("resize", resize);
 
 const clock = new THREE.Clock();
+const leanNow = new THREE.Vector2();
 function frame() {
   const now = performance.now();
-  wind.value = clock.getElapsedTime();
+  time.value = clock.getElapsedTime();
   for (let i = tweens.length - 1; i >= 0; i--) {
     const tw = tweens[i];
     const t = Math.min(1, (now - tw.start) / tw.ms);
@@ -739,69 +580,58 @@ function frame() {
   // 鼠标指着书架上的书，书往外抽出一点
   for (const m of clickable) {
     if (m.userData.action !== "shelf" || m.userData.flying) continue;
-    const target = m === hovered ? 0.05 : 0;
-    m.position.z += (m.userData.home.z + target - m.position.z) * 0.2;
+    m.userData.pull = (m.userData.pull || 0) + ((m === hovered ? 0.05 : 0) - (m.userData.pull || 0)) * 0.2;
+    m.position.copy(m.userData.home).addScaledVector(m.userData.normal, m.userData.pull);
+  }
+  if (!busy) {
+    // 探头：鼠标位置（触屏时用转头角度代替）+ 很慢的呼吸起伏。幅度小，深度图边缘才不会被扯开
+    leanNow.lerp(drag || !lean.lengthSq() ? new THREE.Vector2(-look.yaw * 0.4, 0) : lean, 0.06);
+    camera.position.set(EYE.x + leanNow.x * 0.07, EYE.y - leanNow.y * 0.035 + Math.sin(time.value * 0.8) * 0.004, EYE.z);
   }
   camera.rotation.set(look.pitch, look.yaw, 0);
   renderer.render(scene, camera);
 }
-renderer.setAnimationLoop(frame);
+
+function loadImageData(url) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => {
+      const c = document.createElement("canvas");
+      c.width = img.width;
+      c.height = img.height;
+      const ctx = c.getContext("2d");
+      ctx.drawImage(img, 0, 0);
+      resolve(ctx.getImageData(0, 0, img.width, img.height));
+    };
+    img.onerror = () => reject(new Error(`加载失败：${url}`));
+    img.src = url;
+  });
+}
 
 async function init() {
   resize();
-  buildRoom();
-  buildOutside();
+  const [roomTex, depthTex, data] = await Promise.all([
+    texLoader.loadAsync("study-room.jpg"),
+    texLoader.loadAsync("study-depth.png"),
+    loadImageData("study-depth.png"),
+  ]);
+  depthData = data;
+  updateYawRange();
+  roomTex.anisotropy = renderer.capabilities.getMaxAnisotropy();
+  buildPainting(roomTex, depthTex);
   buildLights();
-  const [shelfModel, deskModel, plantModel, shrubModel] = await Promise.all(
-    ["wooden_bookshelf_worn", "wooden_table_02", "potted_plant_04", "shrub_04"].map(loadModel)
-  );
-
-  softenWood(deskModel, 0.45, 1.35);
-  softenWood(shelfModel, 0.6, 1.3);
-  deskModel.position.set(0, 0, BACK_WALL_Z + 0.4);
-  deskModel.scale.setScalar(DESK_TOP / 0.7994);
-  scene.add(deskModel);
-
-  // 书架贴着左右两面侧墙、正面朝屋里，转头就是正对着。格子在模型还在原点、
-  // 没旋转的时候量一次（书架自己的坐标系），书作为书架的子物体挂上去，跟着一起转
-  const localRows = measureShelves(shelfModel);
-  shelfRows = [];
-  for (const side of [-1, 1]) {
-    const s = side < 0 ? shelfModel : shelfModel.clone();
-    s.position.set(side * (ROOM.x1 - 0.3), 0, -0.3);
-    s.rotation.y = side < 0 ? Math.PI / 2 : -Math.PI / 2;
-    s.userData.bookGroup = new THREE.Group();
-    s.add(s.userData.bookGroup);
-    scene.add(s);
-    shelfRows.push(...localRows.map((row) => ({ ...row, shelf: s })));
-  }
-
-  plantModel.position.set(-0.43, DESK_TOP, -0.98); // 书桌左上角
-  plantModel.rotation.y = 0.6;
-  scene.add(plantModel);
-
-  shrubModel.traverse((o) => {
-    if (o.isMesh) o.material = addWind(o.material.clone(), 0.6);
-  });
-  [[-1.2, -2.2, 3.5, 0.4], [1.4, -2.6, 4, 2.1], [-3.5, -4.5, 5, 1], [3, -5, 5.5, 2.8], [0.2, -6, 4.5, 0.2]].forEach(([x, z, s, ry], i) => {
-    const sh = i === 0 ? shrubModel : shrubModel.clone();
-    sh.position.set(x, 0, z);
-    sh.scale.setScalar(s);
-    sh.rotation.y = ry;
-    scene.add(sh);
-  });
-
   books = (await listBooksLocal()).sort((a, b) => (a.shelfOrder ?? 1e9) - (b.shelfOrder ?? 1e9));
   layoutBooks();
+  renderer.setAnimationLoop(frame);
   document.getElementById("loading").classList.add("done");
 }
 
-// 从阅读页按返回回来时浏览器可能直接复用这一页的缓存快照：撤掉遮罩、把镜头放回椅子上
+// 从阅读页按返回回来时浏览器可能直接复用这一页的缓存快照：撤掉遮罩、把镜头放回座位上
 addEventListener("pageshow", (e) => {
   if (!e.persisted) return;
   document.getElementById("fadeOverlay").classList.remove("show");
-  camera.position.copy(EYE);
-  look.pitch = -0.2;
+  look.yaw = 0;
+  look.pitch = 0;
   busy = false;
 });
 
@@ -810,4 +640,4 @@ init().catch((err) => {
   console.error(err);
 });
 
-window.__study = { scene, camera, renderer, look, frame, layoutBooks, shelfRows: () => shelfRows };
+window.__study = { scene, camera, renderer, look, frame, paintPoint, lean };
