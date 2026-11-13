@@ -703,6 +703,7 @@ function scheduleWord(w, grade) {
 async function gradeCurrentCard(grade) {
   if (cardIndex >= cardQueue.length) return;
   const w = cardQueue[cardIndex];
+  if (grade === 2) document.dispatchEvent(new Event("btr:reviewCorrect")); // 读书小猫（cat.js）发鱼干
   await scheduleWord(w, grade);
   updateDueLabels();
   cardIndex++;
@@ -801,6 +802,7 @@ function checkAnswer() {
     feedback.textContent = "回答正确 ✓";
     feedback.className = "quizFeedback correct";
     input.className = "correct";
+    document.dispatchEvent(new Event("btr:reviewCorrect"));
     scheduleWord(w, 2);
   } else {
     feedback.textContent = `回答错误，正确答案：${direction === "en2zh" ? w.translation : w.word}`;

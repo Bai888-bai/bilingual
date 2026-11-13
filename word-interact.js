@@ -42,6 +42,7 @@
       span.classList.remove("translated");
       return;
     }
+    document.dispatchEvent(new Event("btr:lookup")); // 读书小猫（cat.js）竖耳朵
     try {
       const data = await lookupText(span.dataset.w);
       span.textContent = data.translation || span.dataset.w;
@@ -53,6 +54,7 @@
   }
 
   async function handleLongPress(span, x, y) {
+    document.dispatchEvent(new Event("btr:lookup"));
     const box = wpCreatePopup(x, y);
     wpSetLoading(box);
     try {
@@ -64,6 +66,7 @@
   }
 
   async function handleSentence(text, x, y) {
+    document.dispatchEvent(new Event("btr:lookup"));
     const box = wpCreatePopup(x, y);
     wpSetLoading(box);
     try {

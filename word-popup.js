@@ -266,6 +266,7 @@ async function wpRenderWordDetail(box, data) {
       });
       saveBtn.textContent = "★ 已收藏";
       saveBtn.classList.add("saved");
+      document.dispatchEvent(new Event("btr:wordSaved")); // 读书小猫（cat.js）听这个发鱼干
     } catch (err) {
       saveBtn.disabled = false;
       saveBtn.textContent = "☆ 收藏";

@@ -291,6 +291,7 @@ async function runReader() {
   }
 
   function onFlip() {
+    document.dispatchEvent(new Event("btr:pageFlip")); // 读书小猫（cat.js）醒过来
     const idx = pageFlip.getCurrentPageIndex();
     updatePageNum(idx);
     renderAround(idx);
