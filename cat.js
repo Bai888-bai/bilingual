@@ -2,9 +2,11 @@
 // 别的模块不直接调这里的函数，只往 document 上发事件（btr:lookup / btr:wordSaved /
 // btr:reviewCorrect / btr:pageFlip），这里监听着赚鱼干、做反应——小猫关掉或删掉，
 // 原来的功能完全不受影响。
-// 陪读形象只在页面上有 #catCompanion 的时候才出现（目前只有阅读页有）。
+// 小猫有两种出场方式：阅读页里 #catCompanion 是角落的桌宠（能拖、能收起，只陪读不喂食）；
+// 首页"小猫"tab 里 #catStage 是大号的猫，在那儿喂鱼干、看体重和排行榜。
 (function () {
   const KEY = "readingCat";
+  const CAT_NAME = "团子";
   const IDLE_MS = 3 * 60 * 1000;
 
   function load() {
@@ -81,6 +83,7 @@
     state.fish += n;
     save();
     react("catch", label);
+    refreshPanel();
   }
   document.addEventListener("btr:wordSaved", () => addFish(1, "+1 小鱼干"));
   document.addEventListener("btr:reviewCorrect", () => addFish(1, "+1 小鱼干"));
@@ -127,7 +130,9 @@
   <text class="rcZzz" x="160" y="44" font-size="22" fill="#8a7a66">z z</text>
 </g></svg>`;
 
-  const mount = document.getElementById("catCompanion");
+  const companionMount = document.getElementById("catCompanion");
+  const stageMount = document.getElementById("catStage");
+  const mount = companionMount || stageMount;
   let el = null;
   let idleTimer = null;
 
@@ -172,6 +177,17 @@
     if (!mount) return;
     mount.innerHTML = "";
     el = null;
+    if (stageMount) {
+      el = document.createElement("div");
+      el.className = "readingCat big";
+      el.setAttribute("role", "button");
+      el.setAttribute("aria-label", `${CAT_NAME}，点一下摸摸它`);
+      el.innerHTML = SVG;
+      el.addEventListener("click", () => react("tap"));
+      mount.appendChild(el);
+      wake();
+      return;
+    }
     if (state.hidden) {
       const back = document.createElement("button");
       back.className = "readingCatBack";
@@ -250,6 +266,62 @@
   document.addEventListener("btr:lookup", () => react("lookup"));
   document.addEventListener("btr:pageFlip", wake);
   document.addEventListener("pointerdown", wake, true);
+
+  // ---------- "小猫"页面：喂鱼干、体重、排行榜 ----------
+  let feeding = false;
+  function feed() {
+    if (!el || feeding) return;
+    wake();
+    if (state.fish <= 0) {
+      sounds.pop();
+      popText("没有小鱼干了，去读书吧");
+      return;
+    }
+    feeding = true;
+    state.fish--;
+    save();
+    refreshPanel();
+    el.classList.add("open", "catch");
+    sounds.aah();
+    setTimeout(() => {
+      el.classList.remove("catch");
+      el.classList.add("chew");
+      sounds.nom();
+    }, 460);
+    setTimeout(() => {
+      el.classList.remove("chew", "open");
+      state.weight += 10;
+      save();
+      refreshPanel();
+      popText("+10 克");
+      flash("squish", 200);
+      feeding = false;
+    }, 1060);
+  }
+
+  const $ = (id) => document.getElementById(id);
+  function refreshPanel() {
+    if (!$("catFish")) return;
+    $("catFish").textContent = state.fish;
+    $("catWeight").textContent = `${state.weight.toLocaleString()} 克`;
+    $("catFeedBtn").setAttribute("aria-label", `喂一条小鱼干，还剩 ${state.fish} 条`);
+    $("catMuteBtn").textContent = state.muted ? "声音：关" : "声音：开";
+    // 排行榜按体重排。现在只有一只猫，以后解锁了新猫（或者有了别的用户）往这个数组里加就行
+    const cats = [{ name: CAT_NAME, weight: state.weight }].sort((a, b) => b.weight - a.weight);
+    $("catBoard").innerHTML = cats
+      .map((c, i) => `<li><span class="rank">${i + 1}</span><span class="name">${c.name}</span><span class="kg">${c.weight.toLocaleString()} 克</span></li>`)
+      .join("");
+  }
+  if ($("catFeedBtn")) {
+    $("catFeedBtn").addEventListener("click", feed);
+    $("catMuteBtn").addEventListener("click", () => {
+      state.muted = !state.muted;
+      save();
+      refreshPanel();
+      sounds.pop();
+    });
+    refreshPanel();
+  }
 
   render();
 

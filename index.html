@@ -11,6 +11,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="default" />
 <meta name="apple-mobile-web-app-title" content="中英阅读" />
 <link rel="stylesheet" href="app.css" />
+<link rel="stylesheet" href="cat.css" />
 </head>
 <body>
   <div class="app">
@@ -198,6 +199,32 @@
         </div>
       </section>
 
+      <section id="pageCat" class="page">
+        <div class="catPage">
+          <div class="catHero">
+            <div id="catStage"></div>
+            <div class="catName">团子</div>
+            <div class="catSub">读书、收藏生词、复习答对，就能攒小鱼干喂它</div>
+          </div>
+          <div class="catStats">
+            <div class="catStat"><div class="label">小鱼干</div><div class="value" id="catFish">0</div></div>
+            <div class="catStat"><div class="label">体重</div><div class="value" id="catWeight">2,000 克</div></div>
+          </div>
+          <div class="catActions">
+            <button class="catFeedBtn" id="catFeedBtn">喂一条小鱼干</button>
+            <button class="catMuteBtn" id="catMuteBtn">声音：开</button>
+          </div>
+          <div class="catSection">
+            <h3>体重排行榜</h3>
+            <ol class="catBoard" id="catBoard"></ol>
+          </div>
+          <div class="catSection">
+            <h3>怎么赚小鱼干</h3>
+            <p class="catEarn">收藏一个生词 +1　·　复习认识 / 默写答对 +1<br />每喂一条，团子长胖 10 克</p>
+          </div>
+        </div>
+      </section>
+
       <section id="pageAccount" class="page">
         <div class="accountCard">
           <div class="statusText" id="accountStatus">检查登录状态中…</div>
@@ -220,6 +247,9 @@
       </button>
       <button class="tabBtn" data-page="pageVocab" data-title="生词本">
         <span class="tabIcon"><svg viewBox="0 0 24 24"><rect x="5" y="3.5" width="14" height="17" rx="2"/><path d="M8.5 3.5v17"/><path d="M11.5 8h5M11.5 12h5M11.5 16h3.5"/></svg></span><span>生词本</span>
+      </button>
+      <button class="tabBtn" data-page="pageCat" data-title="小猫">
+        <span class="tabIcon"><svg viewBox="0 0 24 24"><path d="M5 10.5 5.5 4l4 3.2a9 9 0 0 1 5 0L18.5 4l.5 6.5c.7 1.1 1 2.3 1 3.5 0 4-3.6 6.5-8 6.5S4 18 4 14c0-1.2.3-2.4 1-3.5Z"/><path d="M9.5 13.5v.5M14.5 13.5v.5M11 16.5h2"/></svg></span><span>小猫</span>
       </button>
       <button class="tabBtn" data-page="pageAccount" data-title="我的">
         <span class="tabIcon"><svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="3.4"/><path d="M5 20c0-3.87 3.13-6.5 7-6.5s7 2.63 7 6.5"/></svg></span><span>我的</span>

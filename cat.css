@@ -44,6 +44,49 @@
   background: rgba(255, 248, 238, 0.85); color: #5B4636; font-size: 18px;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.18);
 }
+.readingCat.chew .rcMouthOpen { animation: rcChew 0.14s 4 alternate; transform-box: fill-box; transform-origin: center; }
+@keyframes rcChew { to { transform: scaleY(0.35); } }
+
+/* ---------- 首页"小猫"tab：现代、圆润、奶油色，跟书架/生词本的复古风分开 ---------- */
+.catPage { max-width: 420px; margin: 0 auto; color: #5B4636; }
+.catHero {
+  background: #FFF8EE; border-radius: 24px; padding: 18px 16px 14px; text-align: center;
+  box-shadow: 0 6px 20px rgba(91, 70, 54, 0.08);
+}
+.readingCat.big { position: relative; left: auto; bottom: auto; top: auto; width: 220px; height: 210px; margin: 0 auto; }
+.readingCat.big .rcPop { font-size: 14px; top: 0; left: 62%; }
+.catName { font-size: 20px; font-weight: 700; margin: 4px 0 2px; letter-spacing: 1px; }
+.catSub { font-size: 13px; color: #8a7a66; }
+.catStats { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 14px 0; }
+.catStat { background: #FFF8EE; border-radius: 18px; padding: 12px 14px; }
+.catStat .label { font-size: 13px; color: #8a7a66; }
+.catStat .value { font-size: 24px; font-weight: 700; margin-top: 2px; }
+.catActions { display: flex; gap: 10px; }
+.catFeedBtn {
+  flex: 1; min-height: 48px; border: none; border-radius: 24px; cursor: pointer;
+  background: #F0997B; color: #4A1B0C; font-size: 16px; font-weight: 700;
+  transition: transform 0.15s cubic-bezier(0.3, 1.6, 0.5, 1), background 0.15s;
+}
+.catFeedBtn:hover { background: #ED8A69; }
+.catFeedBtn:active { transform: scale(0.95); }
+.catMuteBtn {
+  min-height: 48px; padding: 0 16px; border-radius: 24px; cursor: pointer; font-size: 14px;
+  border: 1.5px solid #E8CFB4; background: transparent; color: #5B4636;
+}
+.catFeedBtn:focus-visible, .catMuteBtn:focus-visible, .readingCat:focus-visible { outline: 3px solid #85B7EB; outline-offset: 2px; }
+.catSection { margin-top: 20px; }
+.catSection h3 { font-size: 15px; margin: 0 0 8px; }
+.catBoard { list-style: none; margin: 0; padding: 0; background: #FFF8EE; border-radius: 18px; overflow: hidden; }
+.catBoard li { display: flex; align-items: center; gap: 12px; padding: 12px 16px; }
+.catBoard li + li { border-top: 1px dashed #E8CFB4; }
+.catBoard .rank {
+  width: 26px; height: 26px; border-radius: 50%; background: #FAC775; color: #633806;
+  display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 700;
+}
+.catBoard .name { flex: 1; font-weight: 600; }
+.catBoard .kg { font-variant-numeric: tabular-nums; }
+.catEarn { font-size: 13px; line-height: 1.8; color: #8a7a66; background: #FFF8EE; border-radius: 18px; padding: 10px 16px; margin: 0; }
+
 @media (prefers-reduced-motion: reduce) {
   .readingCat .rcTail, .readingCat .rcEye { animation: none; }
   .readingCat .rcAll { transition: none; }
